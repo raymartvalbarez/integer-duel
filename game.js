@@ -26,7 +26,7 @@
 
   /* ---------------- sound ---------------- */
   var Sound = (function () {
-    var ctx = null, master = null, on = localStorage.getItem('idu-sound') !== '0';
+    var ctx = null, master = null, on = IDBoard.store.get('idu-sound') !== '0';
     function ensure() {
       if (ctx) return ctx;
       try { ctx = new (window.AudioContext || window.webkitAudioContext)(); master = ctx.createGain(); master.gain.value = 0.5; master.connect(ctx.destination); } catch (e) { ctx = null; }
@@ -44,7 +44,7 @@
     function seq(arr, type, g) { var c = ensure(); if (!c || !on) return; var t = c.currentTime; arr.forEach(function (f, i) { tone(f, 0.16, type || 'triangle', g || 0.2, t + i * 0.1); }); }
     paint();
     return {
-      toggle: function () { unlock(); on = !on; localStorage.setItem('idu-sound', on ? '1' : '0'); paint(); },
+      toggle: function () { unlock(); on = !on; IDBoard.store.set('idu-sound', on ? '1' : '0'); paint(); },
       unlock: unlock,
       good: function () { seq([784, 1175], 'triangle', 0.25); },
       bad: function () { seq([160, 110], 'sawtooth', 0.12); },
@@ -63,9 +63,9 @@
   async function http(method, path, body, tries) {
     tries = tries || 3;
     for (var i = 0; i < tries; i++) {
-      var ctl = new AbortController(), to = setTimeout(function () { ctl.abort(); }, 8000);
+      var ctl = typeof AbortController === 'function' ? new AbortController() : null, to = setTimeout(function () { if (ctl) ctl.abort(); }, 8000);
       try {
-        var opt = { method: method, signal: ctl.signal, cache: 'no-store' };
+        var opt = { method: method, cache: 'no-store' }; if (ctl) opt.signal = ctl.signal;
         if (body !== undefined && body !== null) { opt.headers = { 'Content-Type': 'application/json' }; opt.body = JSON.stringify(body); }
         var r = await fetch(API + '/' + path + (method === 'GET' ? '?t=' + Date.now() : ''), opt);
         clearTimeout(to);
@@ -162,9 +162,9 @@
   function oppPath() { return (G.role === 'a' ? 'b-' : 'a-') + G.code; }
   function saveActive() {
     if (G.demo) return;
-    try { localStorage.setItem('idu-active', JSON.stringify({ code: G.code, role: G.role, me: G.me, ts: Date.now(), r: G.r, qs: G.qStart, ns: NS })); } catch (e) {}
+    try { IDBoard.store.set('idu-active', JSON.stringify({ code: G.code, role: G.role, me: G.me, ts: Date.now(), r: G.r, qs: G.qStart, ns: NS })); } catch (e) {}
   }
-  function clearActive() { try { localStorage.removeItem('idu-active'); } catch (e) {} }
+  function clearActive() { try { IDBoard.store.del('idu-active'); } catch (e) {} }
 
   function startLoops() {
     stopTimers();
@@ -180,7 +180,7 @@
     if (name.length < 2) return { err: 'Please type your name.' };
     if (!grade) return { err: 'Please choose your grade level.' };
     if (!section) return { err: 'Please type your section.' };
-    try { localStorage.setItem('idu-profile', JSON.stringify({ n: name, g: grade, s: section })); } catch (e) {}
+    try { IDBoard.store.set('idu-profile', JSON.stringify({ n: name, g: grade, s: section })); } catch (e) {}
     return { me: { n: name, g: grade, s: section } };
   }
   function genCode() { var s = ''; for (var i = 0; i < 5; i++) s += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]; return s; }
@@ -476,11 +476,19 @@
     $('res-save').textContent = ok ? '✔ Result saved to the leaderboard.' : '⚠ Could not save the result (no connection). Tell your teacher the code ' + G.code + '.';
   }
 
+  function askConfirm(msg) {
+    return new Promise(function (res) {
+      $('confirm-msg').textContent = msg; $('confirm-box').hidden = false;
+      var done = function (v) { $('confirm-box').hidden = true; res(v); };
+      $('confirm-yes').onclick = function () { done(true); };
+      $('confirm-no').onclick = function () { done(false); };
+    });
+  }
   async function leaveDuel() {
     if (!G) return;
     if (!G.demo && G.phase !== 'lobby' && G.phase !== 'joined') {
       var msg = G.done >= MIN_FORFEIT_ROUNDS ? 'Leave the duel? Your opponent will win.' : 'Leave the duel? It will not count.';
-      if (!confirm(msg)) return;
+      if (!(await askConfirm(msg))) return;
     }
     if (!G.demo) { try { await Promise.race([write('PATCH', ownPath(), { left: 1 }), sleep(2500)]); } catch (e) {} }
     G.over = true; stopTimers(); clearActive(); G = null;
@@ -519,7 +527,7 @@
 
   /* ---------------- resume after refresh ---------------- */
   async function resumeDuel() {
-    var st; try { st = JSON.parse(localStorage.getItem('idu-active') || 'null'); } catch (e) { st = null; }
+    var st; try { st = JSON.parse(IDBoard.store.get('idu-active') || 'null'); } catch (e) { st = null; }
     if (!st || st.ns !== NS) return clearActive();
     var m = await http('GET', 'm-' + st.code, null, 3);
     if (!m.ok) return homeErr('No internet connection.');
@@ -589,14 +597,14 @@
   }
   function init() {
     try {
-      var pr = JSON.parse(localStorage.getItem('idu-profile') || 'null');
+      var pr = JSON.parse(IDBoard.store.get('idu-profile') || 'null');
       if (pr) { $('inp-name').value = pr.n || ''; $('inp-grade').value = pr.g || ''; $('inp-section').value = pr.s || ''; }
     } catch (e) {}
     var room = (/[?&]room=([A-Za-z0-9]{5})/.exec(location.search) || [])[1];
     if (room) $('inp-code').value = room.toUpperCase();
     if (DEMO) { $('demo-banner').hidden = false; $('btn-create').style.display = 'none'; $('btn-join').style.display = 'none'; $('inp-code').style.display = 'none'; document.querySelector('label[for=inp-code]').style.display = 'none'; document.querySelector('.divider').style.display = 'none'; $('btn-demo').className = 'primary'; $('btn-demo').textContent = 'Start Practice Duel'; }
     try {
-      var st = JSON.parse(localStorage.getItem('idu-active') || 'null');
+      var st = JSON.parse(IDBoard.store.get('idu-active') || 'null');
       if (st && st.ns === NS && Date.now() - st.ts < 40 * 60 * 1000 && !DEMO) { $('rejoin').hidden = false; $('rejoin-text').textContent = 'You have a duel in progress (code ' + st.code + ').'; }
       else if (st) clearActive();
     } catch (e) {}
@@ -619,6 +627,31 @@
     $('inp-code').addEventListener('input', function () { this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
     loadRoster(); refreshTop();
   }
+  /* ---- in-app browser (Messenger / Facebook / Instagram) helper: non-blocking tip ---- */
+  var UA = navigator.userAgent || '';
+  var IN_APP = /FBAN|FBAV|FB_IAB|FBIOS|FB4A|Messenger|Instagram|; wv\)/i.test(UA);
+  var IS_ANDROID = /Android/i.test(UA), IS_IOS = /iPhone|iPad|iPod/i.test(UA);
+  function chromeIntent() {
+    return 'intent://' + location.host + location.pathname + location.search + '#Intent;scheme=https;package=com.android.chrome;end';
+  }
+  function initInApp() {
+    if (!IN_APP) return;
+    var bar = $('inapp'); if (!bar || IDBoard.store.get('idu-inapp-x') === '1') return;
+    bar.hidden = false;
+    if (IS_ANDROID) {
+      $('inapp-text').textContent = 'For best results, open in Chrome. You can also keep playing here.';
+      $('inapp-open').hidden = false; $('inapp-open').onclick = function () { location.href = chromeIntent(); };
+    } else {
+      $('inapp-text').textContent = 'For best results, tap ••• then “Open in browser”. You can also keep playing here.';
+    }
+    $('inapp-x').onclick = function () { bar.hidden = true; IDBoard.store.set('idu-inapp-x', '1'); };
+  }
+  window.addEventListener('error', function (e) {
+    var bar = $('inapp'); if (!bar || !bar.hidden) return;
+    bar.hidden = false; $('inapp-text').textContent = 'Something went wrong on this phone’s browser. Try reloading, or open this link in Chrome.';
+    if (IS_ANDROID) { $('inapp-open').hidden = false; $('inapp-open').onclick = function () { location.href = chromeIntent(); }; }
+  });
   window.__IDU = { state: function () { return G; } };
   init();
+  initInApp();
 })();

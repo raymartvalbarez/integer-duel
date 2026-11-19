@@ -6,6 +6,15 @@
     var m = /[?&]ns=([\w-]+)/.exec(location.search || '');
     return m && m[1].indexOf('bnhs-integerduel-') === 0 ? m[1] : DEFAULT_NS;
   }
+  var store = (function () {
+    var mem = {}, ok = false;
+    try { window.store.set('__t', '1'); window.localStorage.removeItem('__t'); ok = true; } catch (e) { ok = false; }
+    return {
+      get: function (k) { try { if (ok) { var v = window.store.get(k); return v === undefined ? null : v; } } catch (e) {} return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null; },
+      set: function (k, v) { try { if (ok) { window.store.set(k, v); return; } } catch (e) {} mem[k] = String(v); },
+      del: function (k) { try { if (ok) window.localStorage.removeItem(k); } catch (e) {} delete mem[k]; }
+    };
+  })();
   var NS = nsName();
   var API = 'https://mantledb.sh/v2/' + NS;
   var EXPORT = 'https://mantledb.sh/v2/export/' + NS;
@@ -34,10 +43,10 @@
         if (!validResult(v) || seen[k]) return;
         seen[k] = 1; v.c = k.slice(2); out.push(v);
       });
-      try { localStorage.setItem('idu-board-cache-' + NS, JSON.stringify(out.slice(-300))); } catch (e) {}
+      try { store.set('idu-board-cache-' + NS, JSON.stringify(out.slice(-300))); } catch (e) {}
       return { ok: true, results: out };
     } catch (e) {
-      try { return { ok: false, results: JSON.parse(localStorage.getItem('idu-board-cache-' + NS) || '[]') }; } catch (e2) { return { ok: false, results: [] }; }
+      try { return { ok: false, results: JSON.parse(store.get('idu-board-cache-' + NS) || '[]') }; } catch (e2) { return { ok: false, results: [] }; }
     }
   }
 
@@ -77,5 +86,5 @@
     arr.sort(function (x, y) { return y.wins - x.wins || y.rate - x.rate || y.pull - x.pull || x.name.localeCompare(y.name); });
     return arr;
   }
-  root.IDBoard = { NS: NS, API: API, EXPORT: EXPORT, fetchResults: fetchResults, aggregate: aggregate, filterResults: filterResults, fmtTime: fmtTime, manilaDay: manilaDay, gradeNum: gradeNum, norm: norm };
+  root.IDBoard = { store: store, NS: NS, API: API, EXPORT: EXPORT, fetchResults: fetchResults, aggregate: aggregate, filterResults: filterResults, fmtTime: fmtTime, manilaDay: manilaDay, gradeNum: gradeNum, norm: norm };
 })(window);

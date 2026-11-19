@@ -5,6 +5,8 @@ NS = sys.argv[2] if len(sys.argv) > 2 else 'bnhs-integerduel-test1'
 MODE = sys.argv[3] if len(sys.argv) > 3 else 'full'
 SHOTS = '/workspace/integer-duel/shots'
 Q = '?ns=' + NS
+import os
+B_UA = os.environ.get('B_UA'); B_INIT = os.environ.get('B_INIT')
 MOBILE = dict(viewport={'width': 390, 'height': 844}, device_scale_factor=2, is_mobile=True, has_touch=True)
 WAIT_Q = "document.querySelector('#screen-result.active') || (document.querySelector('#screen-game.active') && document.querySelectorAll('#q-choices .chip:not([disabled])').length==4 && __IDU.state() && __IDU.state().phase=='q')"
 
@@ -37,7 +39,8 @@ async def main():
         b = await pw.chromium.launch(args=['--no-sandbox'])
         errs = []
         if MODE in ('full', 'forfeit'):
-            ca = await b.new_context(**MOBILE); cb = await b.new_context(**MOBILE)
+            ca = await b.new_context(**MOBILE); cb = await b.new_context(**(dict(MOBILE, user_agent=B_UA) if B_UA else MOBILE))
+            if B_INIT: await cb.add_init_script(B_INIT)
             A = await ca.new_page(); B = await cb.new_page()
             for pg in (A, B): pg.on('pageerror', lambda e: errs.append(str(e)))
             await A.goto(f'{BASE}/{Q}'); await B.goto(f'{BASE}/{Q}')

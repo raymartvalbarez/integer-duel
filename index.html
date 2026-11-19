@@ -8,6 +8,7 @@
 <title>Integer Duel · Bago NHS</title>
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
 html,body{margin:0;height:100%;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:linear-gradient(180deg,#0a3d2e 0%,#062a1f 45%,#041910 100%);color:#fff}
 body{display:flex;flex-direction:column;min-height:100%;-webkit-user-select:none;user-select:none}
 input,select{-webkit-user-select:text;user-select:text}
@@ -100,6 +101,18 @@ th{background:#e8f5e9;font-size:.72rem}
   <button type="button" id="btn-sound" aria-label="Toggle sound">🔊 On</button>
 </header>
 
+<div id="inapp" hidden style="background:#fff3cd;color:#5c4400;padding:8px 12px;font-size:.82rem;font-weight:700;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+  <span id="inapp-text" style="flex:1;min-width:150px"></span>
+  <button type="button" id="inapp-open" hidden style="background:#f5c518;color:#062a1f;border:0;border-radius:8px;padding:7px 10px;font-weight:800">Open in Chrome</button>
+  <button type="button" id="inapp-x" aria-label="Dismiss" style="background:transparent;border:0;font-size:1.1rem;color:#5c4400">✕</button>
+</div>
+<div id="confirm-box" hidden style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;color:#111;border-radius:14px;padding:18px;max-width:340px;width:100%;text-align:center">
+    <div id="confirm-msg" style="font-weight:800;margin-bottom:12px"></div>
+    <button class="primary" id="confirm-yes" style="margin-top:6px">Yes, leave</button>
+    <button class="secondary" id="confirm-no">Stay</button>
+  </div>
+</div>
 <section id="screen-home" class="screen active">
   <div class="card">
     <div id="demo-banner" hidden>PRACTICE MODE — you play against the computer. Nothing is saved to the leaderboard.</div>
@@ -186,8 +199,8 @@ th{background:#e8f5e9;font-size:.72rem}
 </section>
 
 <script>document.addEventListener('contextmenu',function(e){e.preventDefault();});</script>
-<script src="questions.js?v=20261119a"></script>
-<script src="board.js?v=20261119a"></script>
-<script src="game.js?v=20261119a"></script>
+<script src="questions.js?v=20261119b"></script>
+<script src="board.js?v=20261119b"></script>
+<script src="game.js?v=20261119b"></script>
 </body>
 </html>
