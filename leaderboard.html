@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0a3d2e">
+<title>Integer Duel Leaderboard · Bago NHS</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:radial-gradient(ellipse at top,#0f5a43 0%,#0a3d2e 45%,#041910 100%);color:#fff}
+body{padding:16px 16px 28px;max-width:1100px;margin:0 auto}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{width:50px;height:50px;border-radius:50%;background:radial-gradient(circle at 30% 30%,#ffe566,#f5c518);color:#062a1f;display:grid;place-items:center;font-weight:900;font-size:1.05rem;box-shadow:0 3px 0 #c9a012}
+h1{margin:0;font-size:clamp(1.2rem,2.4vw,1.8rem);line-height:1.15}
+h1 small{display:block;font-weight:650;opacity:.85;font-size:.55em;margin-top:3px}
+.meta{text-align:right;font-size:.85rem}.meta strong{color:#ffe566}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px;align-items:center}
+.chipbtn{padding:9px 14px;border:0;border-radius:999px;font-weight:800;background:#0a3d2e;color:#fff;border:1.5px solid #f5c51866;cursor:pointer;font-size:.88rem}
+.chipbtn.on{background:linear-gradient(180deg,#ffe566,#f5c518);color:#062a1f}
+select{padding:9px 12px;border-radius:10px;border:0;font-weight:700;font-size:.88rem}
+.grid{display:grid;grid-template-columns:1.1fr 1fr;gap:14px;align-items:start}
+.panel{background:rgba(255,255,255,.06);border:1px solid rgba(245,197,24,.35);border-radius:16px;padding:12px 12px 14px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+.panel h2{margin:0 0 8px;font-size:1.1rem;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.panel h2 .count{font-size:.72rem;font-weight:800;background:#f5c518;color:#062a1f;padding:3px 9px;border-radius:999px}
+.scroll{overflow:auto;max-height:70vh;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;font-size:.86rem}
+th,td{padding:7px 5px;border-bottom:1px solid rgba(255,255,255,.12);text-align:left;vertical-align:top}
+th{color:#ffe566;font-size:.72rem;letter-spacing:.4px;text-transform:uppercase;position:sticky;top:0;background:#0a3d2e}
+tr.r1{background:rgba(251,191,36,.16)}tr.r2{background:rgba(231,229,228,.12)}tr.r3{background:rgba(251,146,60,.14)}
+td.rk{font-weight:900;white-space:nowrap;width:3em}td.w{font-weight:900;color:#ffe566}td.num{white-space:nowrap}
+.gb{display:inline-block;background:#f5c518;color:#062a1f;font-weight:900;font-size:.68rem;padding:1px 6px;border-radius:6px;margin-left:4px}
+.win{color:#86efac;font-weight:800}
+.empty{opacity:.75;text-align:center;padding:26px 8px}
+.foot{margin-top:14px;font-size:.78rem;opacity:.9;display:flex;gap:12px;flex-wrap:wrap;justify-content:space-between}
+.foot a{color:#ffe566;font-weight:800;text-decoration:none}
+@media (max-width:860px){.grid{grid-template-columns:1fr}.meta{text-align:left}}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="brand"><div class="logo">±</div>
+    <h1>Integer Duel Leaderboard<small>Bago National High School · Roxas City · ADM</small></h1></div>
+  <div class="meta"><div>Last updated: <strong id="updated">—</strong></div><div id="counts">Duels: —</div></div>
+</div>
+<div class="filters" id="filters">
+  <button class="chipbtn on" data-g="all">All grades</button>
+  <button class="chipbtn" data-g="11">Grade 11</button>
+  <button class="chipbtn" data-g="12">Grade 12</button>
+  <button class="chipbtn" data-g="10">Grade 10</button>
+  <button class="chipbtn" data-g="9">Grade 9</button>
+  <button class="chipbtn" data-g="8">Grade 8</button>
+  <button class="chipbtn" data-g="7">Grade 7</button>
+  <select id="period"><option value="all">All time</option><option value="today">Today</option><option value="week">Last 7 days</option></select>
+</div>
+<div class="grid">
+  <div class="panel">
+    <h2>Ranking by wins <span class="count" id="c-rank">0</span></h2>
+    <div class="scroll"><table>
+      <thead><tr><th>#</th><th>Student</th><th>Grade · Sec</th><th>W</th><th>L</th><th>D</th><th>Win %</th><th>Pull</th></tr></thead>
+      <tbody id="rank-body"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+    <p style="font-size:.74rem;opacity:.8;margin:8px 0 0">Ranked by wins, then win rate, then total pull points. A forfeit by the opponent counts as a win. Any grade can duel any grade.</p>
+  </div>
+  <div class="panel">
+    <h2>Recent duels <span class="count" id="c-recent">0</span></h2>
+    <div class="scroll"><table>
+      <thead><tr><th>When</th><th>Players</th><th>Pull</th><th>Winner</th></tr></thead>
+      <tbody id="recent-body"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </div>
+</div>
+<div class="foot"><span>Times are Asia/Manila · refreshes every 15 s</span><a id="play-link" href="./">⚔ Play Integer Duel</a></div>
+<script src="board.js?v=20261119a"></script>
+<script>
+(function(){
+  var B = window.IDBoard, grade = 'all', all = [];
+  var q = location.search.indexOf('ns=') >= 0 ? location.search : '';
+  document.getElementById('play-link').href = './' + q;
+  function td(text, cls){ var e=document.createElement('td'); if(cls) e.className=cls; e.textContent=text; return e; }
+  function who(p){ return p.n + ' (G' + B.gradeNum(p.g) + (p.s ? '-' + p.s : '') + ')'; }
+  function periodFilter(){
+    var v = document.getElementById('period').value;
+    if (v === 'all') return {};
+    var now = new Date(), today = B.manilaDay(now.toISOString());
+    if (v === 'today') return { from: today };
+    var wk = B.manilaDay(new Date(now.getTime() - 6*86400000).toISOString());
+    return { from: wk };
+  }
+  function render(){
+    var res = B.filterResults(all, periodFilter());
+    var players = B.aggregate(res, grade);
+    var rb = document.getElementById('rank-body'); rb.innerHTML = '';
+    if (!players.length) { rb.innerHTML = '<tr><td colspan="8" class="empty">No duels yet — be the first to play!</td></tr>'; }
+    players.forEach(function(p,i){
+      var tr = document.createElement('tr'); if (i<3) tr.className = 'r'+(i+1);
+      tr.appendChild(td(['🥇','🥈','🥉'][i] || String(i+1), 'rk'));
+      tr.appendChild(td(p.name)); tr.appendChild(td('G'+p.grade+(p.section?' · '+p.section:'')));
+      tr.appendChild(td(p.wins,'w')); tr.appendChild(td(p.losses)); tr.appendChild(td(p.draws));
+      tr.appendChild(td(Math.round(p.rate*100)+'%','num')); tr.appendChild(td(p.pull,'num'));
+      rb.appendChild(tr);
+    });
+    document.getElementById('c-rank').textContent = players.length;
+    var recent = res.filter(function(r){
+      return grade === 'all' || B.gradeNum(r.a.g) === grade || B.gradeNum(r.b.g) === grade;
+    }).sort(function(x,y){ return y.t < x.t ? -1 : 1; }).slice(0, 60);
+    var cb = document.getElementById('recent-body'); cb.innerHTML = '';
+    if (!recent.length) cb.innerHTML = '<tr><td colspan="4" class="empty">No duels yet.</td></tr>';
+    recent.forEach(function(r){
+      var tr = document.createElement('tr');
+      tr.appendChild(td(B.fmtTime(r.t),'num'));
+      var pc = document.createElement('td');
+      [['a','b'],['b','a']].forEach(function(s,i){ var d = document.createElement('div'); d.textContent = who(r[s[0]]) + '  ' + r[s[0]].p; if (r.w===s[0]) d.className='win'; pc.appendChild(d); });
+      tr.appendChild(pc);
+      var how = r.h === 'forfeit' ? ' (forfeit)' : r.h === 'pull' ? ' (knockout)' : '';
+      tr.appendChild(td(r.a.p + ' – ' + r.b.p,'num'));
+      tr.appendChild(td(r.w === 'd' ? 'Draw' : r[r.w].n + how, r.w === 'd' ? '' : 'win'));
+      cb.appendChild(tr);
+    });
+    document.getElementById('c-recent').textContent = recent.length;
+    document.getElementById('counts').textContent = 'Duels: ' + res.length + ' · Players: ' + B.aggregate(res,'all').length;
+  }
+  async function load(){
+    var r = await B.fetchResults(); all = r.results;
+    document.getElementById('updated').textContent = new Date().toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'numeric',minute:'2-digit',second:'2-digit'}) + (r.ok?'':' (offline)');
+    render();
+  }
+  document.getElementById('filters').addEventListener('click', function(e){
+    var b = e.target.closest('button[data-g]'); if(!b) return;
+    grade = b.getAttribute('data-g');
+    [].forEach.call(document.querySelectorAll('#filters button'), function(x){ x.classList.toggle('on', x===b); });
+    render();
+  });
+  document.getElementById('period').onchange = render;
+  load(); setInterval(load, 15000);
+})();
+</script>
+</body>
+</html>
