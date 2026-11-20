@@ -52,7 +52,8 @@
       pull: function () { tone(120, 0.25, 'triangle', 0.3); },
       go: function () { seq([523, 659, 784, 1046], 'triangle', 0.22); },
       win: function () { seq([523, 659, 784, 1046, 1318], 'triangle', 0.25); },
-      lose: function () { seq([392, 330, 262], 'sine', 0.2); }
+      lose: function () { seq([392, 330, 262], 'sine', 0.2); },
+      invite: function () { seq([659, 880, 659, 880], 'triangle', 0.3); }
     };
   })();
   $('btn-sound').onclick = Sound.toggle;
@@ -97,7 +98,8 @@
 
   /* ---------------- screens ---------------- */
   var screens = { home: $('screen-home'), lobby: $('screen-lobby'), game: $('screen-game'), result: $('screen-result') };
-  function show(name) { Object.keys(screens).forEach(function (k) { screens[k].classList.toggle('active', k === name); }); }
+  var onHome = null;
+  function show(name) { Object.keys(screens).forEach(function (k) { screens[k].classList.toggle('active', k === name); }); if (name === 'home' && onHome) setTimeout(onHome, 0); }
   function homeErr(msg) { var e = $('home-err'); e.hidden = !msg; e.textContent = msg || ''; }
   var nsQ = /[?&]ns=/.test(location.search) ? '?ns=' + NS : '';
   $('board-link').href = 'leaderboard.html' + nsQ;
@@ -200,8 +202,18 @@
     return base + '?room=' + code + (nsQ ? '&ns=' + NS : '');
   }
 
-  async function createDuel() {
-    homeErr('');
+  var infoT = null;
+  function homeInfo(msg) { var e = $('home-info'); e.hidden = !msg; e.textContent = msg || ''; clearTimeout(infoT); if (msg) infoT = setTimeout(function () { e.hidden = true; }, 10000); }
+  function showLobby(mode, who) {   // mode: 'code' | 'invite'
+    var inv = mode === 'invite';
+    $('lobby-invite').hidden = !inv; $('lobby-codebox').hidden = inv;
+    $('lobby-badge').textContent = inv ? 'Invite sent' : 'Duel created';
+    $('btn-cancel').textContent = inv ? 'Cancel invite' : 'Cancel duel';
+    if (inv) $('lobby-invite-t').textContent = 'Waiting for ' + who + '…';
+    show('lobby');
+  }
+  async function createDuel(target) {
+    homeErr(''); homeInfo('');
     var p = readProfile(); if (p.err) return homeErr(p.err);
     $('btn-create').disabled = true;
     try {
@@ -222,13 +234,21 @@
       saveActive();
       $('lobby-code').textContent = code;
       $('lobby-link').textContent = shareUrl(code);
-      show('lobby');
+      showLobby('code');
       startLoops();
+      if (target) {
+        G.invite = { pid: target.pid, n: target.n, at: Date.now() };
+        showLobby('invite', target.n);
+        var iv = await http('POST', 'i-' + IDBoard.pid(), { pid: IDBoard.pid(), n: p.me.n, g: p.me.g, s: p.me.s, code: code, ts: Date.now() }, 2, IDBoard.invApi(target.pid));
+        if (!iv.ok) {
+          var gg = G; if (gg && gg.code === code) { gg.invite = null; write('PATCH', ownPath(), { left: 1 }); leaveToHome(iv.full ? target.n + ' cannot receive invites right now. Try the duel code instead.' : 'Could not send the invite. Check your connection and try again.'); }
+        }
+      }
     } finally { $('btn-create').disabled = false; }
   }
 
   async function joinDuel(codeIn) {
-    homeErr('');
+    homeErr(''); homeInfo('');
     var p = readProfile(); if (p.err) return homeErr(p.err);
     var code = String(codeIn || $('inp-code').value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (code.length !== 5) return homeErr('Type the 5-letter duel code.');
@@ -256,7 +276,7 @@
       $('lobby-code').textContent = code;
       $('lobby-link').textContent = 'Joined ' + h.j.n + '’s duel. Waiting for the host to start…';
       $('btn-share').style.display = 'none'; $('btn-copy').style.display = 'none';
-      show('lobby');
+      showLobby('code'); $('lobby-badge').textContent = 'Joined';
       startLoops();
     } finally { $('btn-join').disabled = false; }
   }
@@ -279,6 +299,10 @@
           g.oppDoc = r.j;
         }
       }
+      if (g.invite && g.phase === 'lobby' && !(g.oppDoc && g.oppDoc.n)) {
+        var dd = await http('GET', 'd-' + g.code, null, 1, IDBoard.duelApi(g.code));
+        if (G === g && dd.ok && !dd.missing && dd.j) { var nm2 = g.invite.n; write('PATCH', ownPath(), { left: 1 }); leaveToHome(nm2 + ' declined your invite.', true); return; }
+      }
     } finally { g.polling = false; }
     if (G === g) step();
   }
@@ -293,6 +317,7 @@
     if (!G || G.over) return;
     var d = G.oppDoc;
     if (G.phase === 'lobby') {
+      if (G.invite && !(d && d.n) && Date.now() - G.invite.at > 30000) { var nm = G.invite.n; write('PATCH', ownPath(), { left: 1 }); return leaveToHome(nm + ' did not respond to your invite.', true); }
       if (Date.now() - G.lobbyAt > 15 * 60 * 1000) { return leaveToHome('The duel expired because no one joined. Create a new one.'); }
       if (d && d.n) {
         G.opp = { n: d.n, g: d.g, s: d.s };
@@ -512,16 +537,23 @@
       var msg = G.done >= MIN_FORFEIT_ROUNDS ? 'Leave the duel? Your opponent will win.' : 'Leave the duel? It will not count.';
       if (!(await askConfirm(msg))) return;
     }
+    cleanupInvite(G);
     if (!G.demo) { try { await Promise.race([write('PATCH', ownPath(), { left: 1 }), sleep(2500)]); } catch (e) {} }
     G.over = true; stopTimers(); clearActive(); G = null;
     $('btn-share').style.display = ''; $('btn-copy').style.display = '';
     show('home'); refreshTop();
   }
-  function leaveToHome(msg) {
+  function cleanupInvite(g) {
+    if (!g || !g.invite) return;
+    var iv = g.invite; g.invite = null;
+    http('DELETE', 'i-' + IDBoard.pid(), null, 1, IDBoard.invApi(iv.pid));
+  }
+  function leaveToHome(msg, info) {
+    cleanupInvite(G);
     if (G) { G.over = true; stopTimers(); }
     clearActive(); G = null;
     $('btn-share').style.display = ''; $('btn-copy').style.display = '';
-    show('home'); homeErr(msg); refreshTop();
+    show('home'); homeErr(info ? '' : msg); homeInfo(info ? msg : ''); refreshTop();
   }
 
   /* ---------------- practice vs computer ---------------- */
@@ -563,7 +595,7 @@
     $('rejoin').hidden = true;
     if (G.role === 'a' && !(G.oppDoc && G.oppDoc.n)) {
       G.phase = 'lobby'; G.lobbyAt = Date.now();
-      $('lobby-code').textContent = G.code; $('lobby-link').textContent = shareUrl(G.code); show('lobby'); return startLoops();
+      $('lobby-code').textContent = G.code; $('lobby-link').textContent = shareUrl(G.code); showLobby('code'); return startLoops();
     }
     if (!G.oppDoc) { clearActive(); G = null; return homeErr('Your opponent has left that duel.'); }
     G.opp = { n: G.oppDoc.n, g: G.oppDoc.g, s: G.oppDoc.s };
@@ -588,6 +620,195 @@
     else { showRound(r); if (st.r === r && st.qs) G.qStart = st.qs; }
   }
   function showRoundKeep(r) { showRound(r); G.mine[r] = G.mine[r]; }
+
+  /* ---------------- online presence + invites ----------------
+   * Presence: each player overwrites ONE key (p-<id>) in a 5-minute lobby namespace (shard 1; if that is full
+   * the writer moves to shard 2, 3, ...). Readers read the current bucket (plus the previous one just after a
+   * rollover). Invites: written to the INVITEE's own namespace (i-<inviter id>); the reply (decline) goes to the
+   * duel's own namespace (d-<code>). Nothing here can permanently fill a namespace. */
+  var Online = (function () {
+    var HB = 10000, LISTEVERY = 6000, INVEVERY = 4000, FRESH = 30000, INV_TTL = 30000;
+    var PID = IDBoard.pid();
+    var on = false, tm = {}, shard = 1, shardBucket = -1, info = {}, lastBusy = null, handled = {};
+    var pop = null;   // currently shown invite {from, n, g, s, code, id, at}
+    function profile() {
+      var n = $('inp-name').value.replace(/\s+/g, ' ').trim(), g = $('inp-grade').value, s = $('inp-section').value.replace(/\s+/g, ' ').trim();
+      return (n.length >= 2 && g && s) ? { n: n, g: g, s: s } : null;
+    }
+    function busy() { return !!G; }
+    async function beat() {
+      var p = profile(); if (!p || !on) return;
+      var b = IDBoard.lobBucket();
+      if (b !== shardBucket) { shardBucket = b; shard = 1; }
+      var body = { n: p.n, g: p.g, s: p.s, st: busy() ? 'duel' : 'idle', hb: Date.now() };
+      for (var i = 0; i < 30; i++) {
+        var r = await http('POST', 'p-' + PID, body, 1, IDBoard.lobApi(b, shard));
+        if (r.ok) { lastBusy = busy(); return; }
+        if (r.full) { shard++; continue; }
+        return;
+      }
+    }
+    async function exportOf(base) {
+      var ctl = typeof AbortController === 'function' ? new AbortController() : null, to = setTimeout(function () { if (ctl) ctl.abort(); }, 8000);
+      try {
+        var r = await fetch(base.replace('mantledb.sh/v2/', 'mantledb.sh/v2/export/') + '?t=' + Date.now(), { cache: 'no-store', signal: ctl ? ctl.signal : undefined });
+        clearTimeout(to);
+        if (r.status === 404) return { entries: {} };
+        if (!r.ok) return null;
+        return await r.json();
+      } catch (e) { clearTimeout(to); return null; }
+    }
+    async function readList() {
+      var now = Date.now(), b = IDBoard.lobBucket(), buckets = [b];
+      if (now % IDBoard.BUCKET_MS < 40000) buckets.push(b - 1);
+      var found = {}, okAny = false;
+      for (var bi = 0; bi < buckets.length; bi++) {
+        for (var s = 1; s < 30; s++) {
+          var j = await exportOf(IDBoard.lobApi(buckets[bi], s));
+          if (!j) break;
+          okAny = true;
+          var bag = j.entries || {}, keys = Object.keys(bag);
+          keys.forEach(function (k) {
+            if (k.indexOf('p-') !== 0) return;
+            var v = bag[k], id = k.slice(2);
+            if (!v || typeof v.n !== 'string' || !v.hb) return;
+            if (!found[id] || found[id].hb < v.hb) found[id] = v;
+          });
+          if (keys.length < 100) break;
+        }
+      }
+      if (!okAny) return null;
+      Object.keys(found).forEach(function (id) {
+        var v = found[id], c = info[id];
+        if (!c) { info[id] = { hb: v.hb, seenAt: Math.abs(now - v.hb) > 90000 ? 0 : now, v: v }; }
+        else if (c.hb !== v.hb) { c.hb = v.hb; c.v = v; if (c.seenAt || Math.abs(now - v.hb) <= 90000) c.seenAt = now; }
+        else c.v = v;
+      });
+      return true;
+    }
+    function render() {
+      var box = $('online'), p = profile();
+      if (!on || !p || !screens.home.classList.contains('active')) { box.hidden = true; return; }
+      box.hidden = false;
+      var now = Date.now(), me = p, list = [];
+      Object.keys(info).forEach(function (id) {
+        var c = info[id]; if (id === PID || !c.seenAt || now - c.seenAt > FRESH) return;
+        var v = c.v; if (IDBoard.norm(v.n) === IDBoard.norm(me.n) && IDBoard.gradeNum(v.g) === IDBoard.gradeNum(me.g)) return;
+        list.push({ pid: id, n: v.n, g: v.g, s: v.s, st: v.st });
+      });
+      list.sort(function (a, b) { return (a.st === 'duel') - (b.st === 'duel') || a.n.localeCompare(b.n); });
+      $('online-n').textContent = list.length ? '(' + list.length + ')' : '';
+      var host = $('online-list'); host.innerHTML = '';
+      if (!list.length) { var e = document.createElement('div'); e.className = 'oempty'; e.textContent = 'No one else is online yet. Share the link or use a duel code.'; host.appendChild(e); return; }
+      list.forEach(function (x) {
+        var row = document.createElement('div'); row.className = 'orow';
+        var w = document.createElement('div'); w.className = 'who';
+        var nb = document.createElement('b'); nb.textContent = x.n; var sm = document.createElement('small'); sm.textContent = 'Grade ' + x.g + ' · ' + x.s;
+        w.appendChild(nb); w.appendChild(sm);
+        var bt = document.createElement('button'); bt.type = 'button';
+        if (x.st === 'duel') { bt.textContent = 'In a duel'; bt.disabled = true; }
+        else { bt.textContent = 'Invite'; bt.setAttribute('data-pid', x.pid); bt.onclick = function () { invite(x); }; }
+        row.appendChild(w); row.appendChild(bt); host.appendChild(row);
+      });
+    }
+    async function listTick() {
+      if (!on || busy() || document.hidden || !screens.home.classList.contains('active')) return;
+      if (await readList()) render();
+    }
+    function invite(x) {
+      if (G) return;
+      var bts = document.querySelectorAll('#online-list button'); [].forEach.call(bts, function (b) { b.disabled = true; });
+      createDuel({ pid: x.pid, n: x.n }).then(function () { render(); });
+    }
+    /* ---- invitee side ---- */
+    function closePop(note) {
+      if (!pop) return; pop = null; $('invite-pop').hidden = true;
+      clearInterval(tm.popTimer); tm.popTimer = null;
+      if (note) homeInfo(note);
+    }
+    function delInvite(fromPid) { return http('DELETE', 'i-' + fromPid, null, 1, IDBoard.invApi(PID)); }
+    function showPop(v, from) {
+      pop = { from: from, n: v.n, code: v.code, at: Date.now() };
+      $('inv-who').textContent = v.n; $('inv-sub').textContent = 'Grade ' + v.g + ' · ' + v.s + ' invites you to a duel!';
+      $('invite-pop').hidden = false;
+      try { Sound.invite(); } catch (e) {}
+      try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e) {}
+      var upd = function () {
+        if (!pop) return; var left = Math.max(0, Math.ceil((INV_TTL - (Date.now() - pop.at)) / 1000));
+        $('inv-timer').textContent = 'Expires in ' + left + 's';
+        if (left <= 0) decline(true);
+      };
+      upd(); clearInterval(tm.popTimer); tm.popTimer = setInterval(upd, 1000);
+    }
+    function decline(timeout) {
+      if (!pop) return; var p = pop;
+      closePop(timeout ? 'The invite from ' + p.n + ' expired.' : '');
+      var me = profile();
+      http('POST', 'd-' + p.code, { by: me ? me.n : '', ts: Date.now(), why: timeout ? 'timeout' : 'declined' }, 2, IDBoard.duelApi(p.code));
+      delInvite(p.from);
+    }
+    function accept() {
+      if (!pop) return; var p = pop; closePop('');
+      delInvite(p.from);
+      $('inp-code').value = p.code;
+      joinDuel(p.code);
+    }
+    async function invTick() {
+      if (!on || document.hidden) return;
+      if (pop) {
+        if (G) return decline(false);
+        var r = await http('GET', 'i-' + pop.from, null, 1, IDBoard.invApi(PID));
+        if (pop && r.ok && r.missing) closePop(pop.n + ' cancelled the invite.');
+        return;
+      }
+      if (busy() || !screens.home.classList.contains('active')) return;
+      var j = await exportOf(IDBoard.invApi(PID)); if (!j || pop || busy()) return;
+      var bag = j.entries || {}, now = Date.now(), best = null;
+      for (var k of Object.keys(bag)) {
+        if (k.indexOf('i-') !== 0) continue;
+        var v = bag[k], from = k.slice(2);
+        if (!v || !v.code || !v.ts) { delInvite(from); continue; }
+        var age = now - v.ts;
+        if (age > 120000) { delInvite(from); continue; }
+        var id = from + ':' + v.ts;
+        if (handled[id] || age > 60000 || age < -60000) continue;
+        if (!best || v.ts > best.v.ts) best = { v: v, from: from, id: id };
+      }
+      if (!best) return;
+      handled[best.id] = 1;
+      // make sure the host is still there before bothering the player
+      var a = await http('GET', 'a-' + best.v.code, null, 1);
+      if (!a.ok) { delete handled[best.id]; return; }
+      if (a.missing || !a.j || a.j.left) { delInvite(best.from); return; }
+      var b = await http('GET', 'b-' + best.v.code, null, 1);
+      if (b.ok && !b.missing) { delInvite(best.from); return; }
+      if (busy() || pop) return;
+      showPop(best.v, best.from);
+    }
+    function stop() {
+      on = false; Object.keys(tm).forEach(function (k) { clearInterval(tm[k]); tm[k] = null; });
+      closePop(''); $('online').hidden = true;
+    }
+    function start() {
+      if (on) return; on = true; lastBusy = busy();
+      beat(); listTick(); invTick();
+      tm.hb = setInterval(beat, HB); tm.list = setInterval(listTick, LISTEVERY); tm.inv = setInterval(invTick, INVEVERY);
+      tm.busy = setInterval(function () { if (busy() !== lastBusy) { lastBusy = busy(); beat(); } if (!busy()) render(); }, 1500);
+    }
+    var deb = null;
+    function refresh() { clearTimeout(deb); deb = setTimeout(function () { if (profile() && !DEMO) { if (!on) start(); else beat(); } else stop(); }, 900); }
+    function init() {
+      onHome = function () { render(); listTick(); };
+      ['inp-name', 'inp-grade', 'inp-section'].forEach(function (id) { $(id).addEventListener('input', refresh); $(id).addEventListener('change', refresh); });
+      $('inv-accept').onclick = accept; $('inv-decline').onclick = function () { decline(false); };
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden) { if (on) { Object.keys(tm).forEach(function (k) { clearInterval(tm[k]); tm[k] = null; }); on = false; } }
+        else if (profile() && !DEMO) start();
+      });
+      if (profile() && !DEMO) start();
+    }
+    return { init: init, refresh: refresh, beat: beat, state: function () { return { on: on, pop: pop, info: info }; } };
+  })();
 
   /* ---------------- home wiring ---------------- */
   var roster = [];
@@ -630,7 +851,7 @@
       if (st && st.ns === NS && Date.now() - st.ts < 40 * 60 * 1000 && !DEMO) { $('rejoin').hidden = false; $('rejoin-text').textContent = 'You have a duel in progress (code ' + st.code + ').'; }
       else if (st) clearActive();
     } catch (e) {}
-    $('btn-create').onclick = createDuel;
+    $('btn-create').onclick = function () { createDuel(); };
     $('btn-join').onclick = function () { joinDuel(); };
     $('btn-demo').onclick = startDemo;
     $('btn-rejoin').onclick = resumeDuel;
@@ -648,6 +869,7 @@
     };
     $('inp-code').addEventListener('input', function () { this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
     loadRoster(); refreshTop();
+    Online.init();
   }
   /* ---- in-app browser (Messenger / Facebook / Instagram) helper: non-blocking tip ---- */
   var UA = navigator.userAgent || '';
@@ -673,7 +895,7 @@
     bar.hidden = false; $('inapp-text').textContent = 'Something went wrong on this phone’s browser. Try reloading, or open this link in Chrome.';
     if (IS_ANDROID) { $('inapp-open').hidden = false; $('inapp-open').onclick = function () { location.href = chromeIntent(); }; }
   });
-  window.__IDU = { state: function () { return G; } };
+  window.__IDU = { state: function () { return G; }, online: function () { return Online.state(); } };
   init();
   initInApp();
 })();

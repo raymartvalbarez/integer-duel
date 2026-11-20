@@ -26,6 +26,16 @@
   function duelApi(code) { return ROOT + duelNs(code); }
   function resNs(i) { return BASE + '-res-' + i; }
   function resApi(i) { return ROOT + resNs(i); }
+  /* Presence: time-bucketed (5 min) lobby namespaces, sharded when one fills (100 entries). Invites: one namespace per invitee. */
+  var BUCKET_MS = 300000;
+  function lobBucket(t) { return Math.floor((t || Date.now()) / BUCKET_MS); }
+  function lobApi(bucket, shard) { return ROOT + BASE + '-lob-' + bucket + '-' + shard; }
+  function invApi(pid) { return ROOT + BASE + '-inv-' + String(pid).toLowerCase(); }
+  function pid() {
+    var p = store.get('idu-pid');
+    if (!p || !/^[a-z0-9]{6,12}$/.test(p)) { p = ''; var cs = 'abcdefghijklmnopqrstuvwxyz0123456789'; for (var i = 0; i < 8; i++) p += cs[Math.floor(Math.random() * cs.length)]; store.set('idu-pid', p); }
+    return p;
+  }
   var RES_KEY = 'idu-res-idx-' + BASE;
   function resIdx() { var n = parseInt(store.get(RES_KEY), 10); return n >= 1 && n < 500 ? n : 1; }
   function setResIdx(n) { try { store.set(RES_KEY, String(n)); } catch (e) {} }
@@ -111,5 +121,5 @@
     arr.sort(function (x, y) { return y.wins - x.wins || y.rate - x.rate || y.pull - x.pull || x.name.localeCompare(y.name); });
     return arr;
   }
-  root.IDBoard = { store: store, NS: NS, API: API, EXPORT: EXPORT, ROOT: ROOT, duelApi: duelApi, resApi: resApi, resIdx: resIdx, setResIdx: setResIdx, fetchResults: fetchResults, aggregate: aggregate, filterResults: filterResults, fmtTime: fmtTime, manilaDay: manilaDay, gradeNum: gradeNum, norm: norm };
+  root.IDBoard = { store: store, NS: NS, API: API, EXPORT: EXPORT, ROOT: ROOT, BUCKET_MS: BUCKET_MS, lobBucket: lobBucket, lobApi: lobApi, invApi: invApi, pid: pid, duelApi: duelApi, resApi: resApi, resIdx: resIdx, setResIdx: setResIdx, fetchResults: fetchResults, aggregate: aggregate, filterResults: filterResults, fmtTime: fmtTime, manilaDay: manilaDay, gradeNum: gradeNum, norm: norm };
 })(window);
