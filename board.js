@@ -18,6 +18,17 @@
   var NS = nsName();
   var API = 'https://mantledb.sh/v2/' + NS;
   var EXPORT = 'https://mantledb.sh/v2/export/' + NS;
+  var ROOT = 'https://mantledb.sh/v2/';
+  /* Live duel documents (m-/a-/b-) live in one tiny namespace PER DUEL so they can never fill up the
+     free 100-entry limit. Results (r-) go into numbered namespaces res-1, res-2, ... (legacy NS is read-only history). */
+  var BASE = NS === DEFAULT_NS ? 'bnhs-integerduel' : NS;
+  function duelNs(code) { return BASE + '-d-' + String(code).toLowerCase(); }
+  function duelApi(code) { return ROOT + duelNs(code); }
+  function resNs(i) { return BASE + '-res-' + i; }
+  function resApi(i) { return ROOT + resNs(i); }
+  var RES_KEY = 'idu-res-idx-' + BASE;
+  function resIdx() { var n = parseInt(store.get(RES_KEY), 10); return n >= 1 && n < 500 ? n : 1; }
+  function setResIdx(n) { try { store.set(RES_KEY, String(n)); } catch (e) {} }
 
   function norm(s) { return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
   function validSide(x) {
@@ -29,24 +40,38 @@
   }
   function gradeNum(g) { return String(g || '').replace(/\D/g, ''); }
 
+  function readBag(j, out, seen) {
+    var bag = (j && j.entries) || {};
+    Object.keys(bag).forEach(function (k) {
+      if (k.indexOf('r-') !== 0) return;
+      var v = bag[k];
+      if (!validResult(v) || seen[k]) return;
+      seen[k] = 1; v.c = k.slice(2); out.push(v);
+    });
+  }
+  async function exportNs(ns) {   // -> {ok, empty, j}
+    var r = await fetch(ROOT + 'export/' + ns + '?t=' + Date.now(), { cache: 'no-store' });
+    if (r.status === 404) return { ok: true, empty: true };
+    if (!r.ok) throw new Error('http ' + r.status);
+    var j = await r.json();
+    var n = Object.keys((j && j.entries) || {}).length;
+    return { ok: true, empty: n === 0, j: j };
+  }
+  /* Legacy namespace + res-1, res-2, ... until one is empty/missing. */
   async function fetchResults() {
-    var out = [];
+    var out = [], seen = {}, ck = 'idu-board-cache-' + BASE;
     try {
-      var r = await fetch(EXPORT + '?t=' + Date.now(), { cache: 'no-store' });
-      if (r.status === 404) return { ok: true, results: [] };
-      var j = await r.json();
-      var bag = (j && j.entries) || {};
-      var seen = {};
-      Object.keys(bag).forEach(function (k) {
-        if (k.indexOf('r-') !== 0) return;
-        var v = bag[k];
-        if (!validResult(v) || seen[k]) return;
-        seen[k] = 1; v.c = k.slice(2); out.push(v);
-      });
-      try { store.set('idu-board-cache-' + NS, JSON.stringify(out.slice(-300))); } catch (e) {}
+      var lg = await exportNs(NS);
+      if (lg.j) readBag(lg.j, out, seen);
+      for (var i = 1; i < 200; i++) {
+        var x = await exportNs(resNs(i));
+        if (x.empty) break;
+        readBag(x.j, out, seen);
+      }
+      try { store.set(ck, JSON.stringify(out.slice(-600))); } catch (e) {}
       return { ok: true, results: out };
     } catch (e) {
-      try { return { ok: false, results: JSON.parse(store.get('idu-board-cache-' + NS) || '[]') }; } catch (e2) { return { ok: false, results: [] }; }
+      try { return { ok: false, results: JSON.parse(store.get(ck) || '[]') }; } catch (e2) { return { ok: false, results: [] }; }
     }
   }
 
@@ -86,5 +111,5 @@
     arr.sort(function (x, y) { return y.wins - x.wins || y.rate - x.rate || y.pull - x.pull || x.name.localeCompare(y.name); });
     return arr;
   }
-  root.IDBoard = { store: store, NS: NS, API: API, EXPORT: EXPORT, fetchResults: fetchResults, aggregate: aggregate, filterResults: filterResults, fmtTime: fmtTime, manilaDay: manilaDay, gradeNum: gradeNum, norm: norm };
+  root.IDBoard = { store: store, NS: NS, API: API, EXPORT: EXPORT, ROOT: ROOT, duelApi: duelApi, resApi: resApi, resIdx: resIdx, setResIdx: setResIdx, fetchResults: fetchResults, aggregate: aggregate, filterResults: filterResults, fmtTime: fmtTime, manilaDay: manilaDay, gradeNum: gradeNum, norm: norm };
 })(window);

@@ -60,26 +60,37 @@
 
   /* ---------------- network ---------------- */
   var lastOk = Date.now();
-  async function http(method, path, body, tries) {
+  var lastStatus = 0;   // last HTTP status from the server (0 = no response / network error)
+  function baseFor(path) { return /^[mab]-/.test(path) ? IDBoard.duelApi(path.slice(2)) : API; }
+  async function http(method, path, body, tries, base) {
     tries = tries || 3;
+    base = base || baseFor(path);
     for (var i = 0; i < tries; i++) {
       var ctl = typeof AbortController === 'function' ? new AbortController() : null, to = setTimeout(function () { if (ctl) ctl.abort(); }, 8000);
       try {
         var opt = { method: method, cache: 'no-store' }; if (ctl) opt.signal = ctl.signal;
         if (body !== undefined && body !== null) { opt.headers = { 'Content-Type': 'application/json' }; opt.body = JSON.stringify(body); }
-        var r = await fetch(API + '/' + path + (method === 'GET' ? '?t=' + Date.now() : ''), opt);
+        var r = await fetch(base + '/' + path + (method === 'GET' ? '?t=' + Date.now() : ''), opt);
         clearTimeout(to);
         var j = null; try { j = await r.json(); } catch (e) {}
-        if (r.status === 404) { lastOk = Date.now(); return { ok: true, missing: true }; }
+        if (r.status === 404) { lastOk = Date.now(); lastStatus = 404; return { ok: true, missing: true }; }
         if (r.ok) {
-          lastOk = Date.now();
+          lastOk = Date.now(); lastStatus = r.status;
           if (j && j.error && /not found|non-existent/i.test(String(j.error))) return { ok: true, missing: true };
           return { ok: true, j: j };
         }
-      } catch (e) { clearTimeout(to); }
+        lastStatus = r.status;
+        if (r.status === 403 && j && /limit/i.test(String(j.error || ''))) return { ok: false, status: 403, full: true };
+        if (r.status === 429) { lastStatus = 429; }
+      } catch (e) { clearTimeout(to); lastStatus = 0; }
       await sleep(350 * (i + 1));
     }
-    return { ok: false };
+    return { ok: false, status: lastStatus };
+  }
+  function failMsg(r, what) {
+    if (r && r.full) return 'The game server is full right now. Please tell your teacher.';
+    if (r && r.status >= 400) return 'The game server had a problem (error ' + r.status + '). Please try again in a moment.';
+    return what + ' Check your connection and try again.';
   }
   var wq = Promise.resolve();
   function write(method, path, body) { wq = wq.then(function () { return http(method, path, body, 4); }); return wq; }
@@ -197,15 +208,15 @@
       var code = null;
       for (var i = 0; i < 6 && !code; i++) {
         var c = genCode(), r = await http('GET', 'm-' + c, null, 2);
-        if (!r.ok) { homeErr('No internet connection. Please try again.'); return; }
+        if (!r.ok) { homeErr(r.status >= 400 ? failMsg(r, '') : 'No internet connection. Please try again.'); return; }
         if (r.missing) code = c;
       }
       if (!code) return homeErr('Could not make a room code. Try again.');
       var seed = Math.floor(Math.random() * 2147483000) + 1;
       var m = await http('POST', 'm-' + code, { v: 1, seed: seed, created: Date.now(), host: p.me.n }, 3);
-      if (!m.ok) return homeErr('Could not create the duel. Check your connection and try again.');
+      if (!m.ok) return homeErr(failMsg(m, 'Could not create the duel.'));
       var d = await http('POST', 'a-' + code, { n: p.me.n, g: p.me.g, s: p.me.s, hb: Date.now(), ans: {} }, 3);
-      if (!d.ok) return homeErr('Could not create the duel. Check your connection and try again.');
+      if (!d.ok) return homeErr(failMsg(d, 'Could not create the duel.'));
       G = newGame('a', code, p.me, seed);
       G.phase = 'lobby'; G.lobbyAt = Date.now();
       saveActive();
@@ -224,7 +235,7 @@
     $('btn-join').disabled = true;
     try {
       var m = await http('GET', 'm-' + code, null, 3);
-      if (!m.ok) return homeErr('No internet connection. Please try again.');
+      if (!m.ok) return homeErr(m.status >= 400 ? failMsg(m, '') : 'No internet connection. Please try again.');
       if (m.missing || !m.j || !m.j.seed) return homeErr('Duel ' + code + ' was not found. Check the code with your friend.');
       if (Date.now() - Number(m.j.created || 0) > 45 * 60 * 1000) return homeErr('That duel is too old. Ask your friend to create a new one.');
       var h = await http('GET', 'a-' + code, null, 3);
@@ -234,7 +245,7 @@
       if (b.ok && !b.missing) return homeErr('That duel already has two players.');
       var tok = Math.random().toString(36).slice(2, 10);
       var w = await http('POST', 'b-' + code, { n: p.me.n, g: p.me.g, s: p.me.s, hb: Date.now(), ans: {}, tok: tok, joined: Date.now() }, 3);
-      if (!w.ok) return homeErr('Could not join. Check your connection and try again.');
+      if (!w.ok) return homeErr(failMsg(w, 'Could not join.'));
       await sleep(1100);
       var chk = await http('GET', 'b-' + code, null, 2);
       if (chk.ok && chk.j && chk.j.tok !== tok) return homeErr('That duel already has two players.');
@@ -465,15 +476,26 @@
       if (how !== 'forfeit') { http('DELETE', (g.role === 'a' ? 'a-' : 'b-') + code, null, 1); if (g.role === 'a') http('DELETE', 'm-' + code, null, 1); }
     }, 150000);
   }
+  /* Results go to the current numbered namespace res-N; if it is full (403 limit) move to N+1 and retry. */
+  async function postResult(code, res) {
+    var idx = IDBoard.resIdx(), last = { ok: false };
+    for (var n = 0; n < 60; n++, idx++) {
+      var w = await http('POST', 'r-' + code, res, 2, IDBoard.resApi(idx));
+      if (w.ok) { IDBoard.setResIdx(idx); return w; }
+      last = w;
+      if (!w.full) return w;   // real network/server error: caller retries
+    }
+    return last;
+  }
   async function saveResult(res, delay) {
     if (delay) {
       await sleep(delay);
-      var ex = await http('GET', 'r-' + G.code, null, 2);
+      var ex = await http('GET', 'r-' + G.code, null, 2, IDBoard.resApi(IDBoard.resIdx()));
       if (ex.ok && !ex.missing) { $('res-save').textContent = '✔ Result saved to the leaderboard.'; return; }
     }
-    var ok = false;
-    for (var i = 0; i < 4 && !ok; i++) { var w = await http('POST', 'r-' + G.code, res, 2); ok = w.ok; if (!ok) await sleep(1500); }
-    $('res-save').textContent = ok ? '✔ Result saved to the leaderboard.' : '⚠ Could not save the result (no connection). Tell your teacher the code ' + G.code + '.';
+    var ok = false, w = null;
+    for (var i = 0; i < 4 && !ok; i++) { w = await postResult(G.code, res); ok = w.ok; if (!ok) await sleep(1500); }
+    $('res-save').textContent = ok ? '✔ Result saved to the leaderboard.' : (w && (w.full || w.status >= 400) ? '⚠ Could not save the result (server problem). Tell your teacher the code ' + G.code + '.' : '⚠ Could not save the result (no connection). Tell your teacher the code ' + G.code + '.');
   }
 
   function askConfirm(msg) {
