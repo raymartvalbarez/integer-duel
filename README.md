@@ -14,14 +14,16 @@ Teacher Raymart Valbarez · Roxas City, Philippines.
 3. Both phones get the **same 10 integer questions** (same order), 10 seconds each, 4 choices. Correct = **10 pull + up to 5 speed bonus**. Wrong or time-up = no pull.
 4. The rope moves by the difference in pull. Pull it **50 points past the center** and you win at once; otherwise the player with the most pull after round 10 wins (equal pull = draw).
 5. Only the tapped answer is marked Correct/Wrong; the right choice is never shown, and the end screen shows scores only.
+6. Each learner may play a lifetime maximum of **50 games** (duels against a classmate and practice vs the computer). A game counts once it starts (first countdown), so leaving mid-duel still uses one of the 50. The home screen shows **Games played: X / 50**. This does not reset unless the teacher says so.
 
 Questions (`questions.js`): add, subtract, multiply and divide signed integers, order of operations, absolute value, comparing/ordering integers, number line, missing numbers, and word problems (temperature, elevation, money, floors, debts, game points), plus a large curated bank of worded items. Each 10-question duel is 5 easy, 3 average and 2 difficult (50-30-20). Both phones build the same items from a shared seed; `node tools/test_questions.js` re-verifies 10,000 duels (100,000 items).
 
 ## Networking (no paid backend)
 MantleDB namespace `bnhs-integerduel-nov2026` (`?ns=bnhs-integerduel-…` switches namespace for testing). Each player writes only their own small document (`a-CODE`, `b-CODE`: profile, heartbeat, answers) and polls the opponent about once per second, so there is no WebRTC and it works on mobile data. The host's `m-CODE` holds the question seed. Finished duels are written once to `r-CODE`, which the leaderboard reads.
 
-* Opponent silent for 40 s or taps **Leave**: after 3 completed rounds the remaining player **wins by forfeit**; earlier, the duel is **cancelled** and not counted.
-* Answers recorded after 20.8 s are ignored; speed is measured on each player's own phone.
+* Opponent silent for 40 s or taps **Leave**: after 3 completed rounds the remaining player **wins by forfeit**; earlier, the duel is **cancelled** and not added to the leaderboard, but it still counts toward the 50-game cap if it had already started.
+* Answers recorded after 10.8 s are ignored; speed is measured on each player's own phone.
+* Play counts are stored in numbered namespaces `…-plays-N` (name + grade + section), separate from the leaderboard, with a local cache for speed.
 * Refreshing the page offers **Rejoin duel**.
 
 ## Leaderboard

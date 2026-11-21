@@ -96,6 +96,147 @@
   var wq = Promise.resolve();
   function write(method, path, body) { wq = wq.then(function () { return http(method, path, body, 4); }); return wq; }
 
+
+  /* ---------------- 50-game lifetime cap ----------------
+   * Count official finished duels (leaderboard r- docs) plus practice and any
+   * duel that actually started (countdown / first question). Lobby wait does
+   * not count. Identity is name + grade + section. The play log lives in
+   * …-plays-N so practice/abandons never show on the leaderboard. */
+  var Plays = (function () {
+    var CAP = IDBoard.PLAY_CAP;
+    var st = { n: 0, ids: [], ready: false, key: '', me: null, idx: 1 };
+    var lastResults = [];
+    var inflight = null;
+
+    function profileMe() {
+      if (G && G.me && G.me.n) return { n: G.me.n, g: G.me.g, s: G.me.s };
+      var n = $('inp-name').value.replace(/\s+/g, ' ').trim();
+      var g = $('inp-grade').value, s = $('inp-section').value.replace(/\s+/g, ' ').trim();
+      return (n.length >= 2 && g && s) ? { n: n, g: g, s: s } : null;
+    }
+    function cacheK(key) { return 'idu-plays-v1-' + IDBoard.NS + '-' + key; }
+    function loadLocal(key) {
+      try {
+        var o = JSON.parse(IDBoard.store.get(cacheK(key)) || 'null');
+        return o && Array.isArray(o.ids) ? o : null;
+      } catch (e) { return null; }
+    }
+    function saveLocal(key, ids, idx) {
+      try { IDBoard.store.set(cacheK(key), JSON.stringify({ ids: ids, idx: idx || st.idx, t: Date.now() })); } catch (e) {}
+    }
+    async function readRemote(me) {
+      var id = IDBoard.playDocId(me.n, me.g, me.s), ids = [], found = 0, lastEmpty = 0;
+      for (var i = 1; i < 80; i++) {
+        var bag = null;
+        try {
+          var r = await fetch(IDBoard.ROOT + 'export/' + IDBoard.playsNs(i) + '?t=' + Date.now(), { cache: 'no-store' });
+          if (r.status === 404) { lastEmpty = i; break; }
+          if (!r.ok) break;
+          bag = await r.json();
+        } catch (e) { break; }
+        var entries = (bag && bag.entries) || {};
+        if (!Object.keys(entries).length) { lastEmpty = i; break; }
+        var v = entries[id];
+        if (v && Array.isArray(v.ids)) { ids = v.ids; found = i; }
+      }
+      return { ids: ids, idx: found || (lastEmpty || 1) };
+    }
+    function mergeAll(me, remoteIds, official) {
+      var loc = loadLocal(IDBoard.playKey(me.n, me.g, me.s));
+      var off = IDBoard.officialPlayIds(official || lastResults, me.n, me.g, me.s);
+      return IDBoard.mergePlayIds(off, remoteIds, loc && loc.ids);
+    }
+    function apply() {
+      var box = $('plays-box'), count = $('plays-count'), msg = $('plays-cap');
+      if (!box) return;
+      var me = profileMe();
+      if (!me) { box.hidden = true; syncButtons(false); return; }
+      box.hidden = false;
+      count.textContent = 'Games played: ' + st.n + ' / ' + CAP;
+      var capped = st.n >= CAP;
+      box.classList.toggle('cap', capped);
+      if (msg) { msg.hidden = !capped; }
+      syncButtons(capped);
+    }
+    function syncButtons(capped) {
+      if (capped === undefined) capped = atCap();
+      ['btn-create', 'btn-join', 'btn-demo'].forEach(function (id) {
+        var b = $(id); if (b && !b.dataset.busy) b.disabled = !!capped;
+      });
+      var code = $('inp-code'); if (code) code.disabled = !!capped;
+    }
+    function setState(me, ids, idx) {
+      var key = IDBoard.playKey(me.n, me.g, me.s);
+      st.me = me; st.key = key; st.ids = ids; st.n = ids.length; st.ready = true;
+      if (idx) st.idx = idx;
+      saveLocal(key, ids, st.idx);
+      apply();
+    }
+    async function refresh(official) {
+      if (official) lastResults = official;
+      var me = profileMe();
+      if (!me) { st.ready = false; st.n = 0; st.key = ''; apply(); return st; }
+      var key = IDBoard.playKey(me.n, me.g, me.s);
+      var loc = loadLocal(key);
+      if (loc) setState(me, mergeAll(me, loc.ids, lastResults), loc.idx);
+      else apply();
+      try {
+        var rem = await readRemote(me);
+        if (!official && !lastResults.length) {
+          var bag = await IDBoard.fetchResults();
+          lastResults = (bag && bag.results) || [];
+        }
+        var ids = mergeAll(me, rem.ids, lastResults);
+        setState(me, ids, rem.idx);
+      } catch (e) {
+        var ids2 = mergeAll(me, [], lastResults);
+        setState(me, ids2, st.idx);
+      }
+      return st;
+    }
+    async function ensure() {
+      if (inflight) return inflight;
+      var me = profileMe();
+      if (me && st.ready && st.key === IDBoard.playKey(me.n, me.g, me.s)) return st;
+      inflight = refresh().then(function (x) { inflight = null; return x; }, function () { inflight = null; return st; });
+      return inflight;
+    }
+    async function record(gid) {
+      var me = profileMe();
+      if (!me || !gid) return st;
+      await ensure();
+      if (st.ids.indexOf(gid) >= 0) return st;
+      var ids = IDBoard.mergePlayIds(st.ids, [gid]);
+      setState(me, ids, st.idx);
+      var body = { n: me.n, g: String(me.g), s: me.s, ids: ids, t: new Date().toISOString() };
+      var id = IDBoard.playDocId(me.n, me.g, me.s);
+      var idx = st.idx || 1;
+      var existing = await http('GET', id, null, 2, IDBoard.playsApi(idx));
+      if (existing.ok && !existing.missing) {
+        var w = await http('PATCH', id, body, 2, IDBoard.playsApi(idx));
+        if (!w.ok) await http('POST', id, body, 2, IDBoard.playsApi(idx));
+        return st;
+      }
+      // document not at this index: try nearby, then create (roll over if the namespace is full)
+      for (var i = 1; i < 80; i++) {
+        var g = await http('GET', id, null, 1, IDBoard.playsApi(i));
+        if (g.ok && !g.missing) {
+          st.idx = i; await http('PATCH', id, body, 2, IDBoard.playsApi(i)); return st;
+        }
+      }
+      for (var n = 0; n < 40; n++, idx++) {
+        var c = await http('POST', id, body, 2, IDBoard.playsApi(idx));
+        if (c.ok) { st.idx = idx; saveLocal(st.key, ids, idx); return st; }
+        if (!c.full) break;
+      }
+      return st;
+    }
+    function atCap() { return st.n >= CAP; }
+    function capMsg() { return "You've finished your 50 Integer Duel games. Great job!"; }
+    function snapshot() { return { n: st.n, cap: CAP, atCap: atCap(), ids: st.ids.slice(), ready: st.ready, key: st.key }; }
+    return { refresh: refresh, ensure: ensure, record: record, atCap: atCap, capMsg: capMsg, apply: apply, syncButtons: syncButtons, snapshot: snapshot, CAP: CAP };
+  })();
+
   /* ---------------- screens ---------------- */
   var screens = { home: $('screen-home'), lobby: $('screen-lobby'), game: $('screen-game'), result: $('screen-result') };
   var onHome = null;
@@ -244,7 +385,9 @@
   async function createDuel(target) {
     homeErr(''); homeInfo('');
     var p = readProfile(); if (p.err) return homeErr(p.err);
-    $('btn-create').disabled = true;
+    await Plays.ensure();
+    if (Plays.atCap()) { Plays.apply(); return homeInfo(Plays.capMsg()); }
+    $('btn-create').disabled = true; $('btn-create').dataset.busy = '1';
     try {
       var code = null;
       for (var i = 0; i < 6 && !code; i++) {
@@ -273,7 +416,7 @@
           var gg = G; if (gg && gg.code === code) { gg.invite = null; write('PATCH', ownPath(), { left: 1 }); leaveToHome(iv.full ? target.n + ' cannot receive invites right now. Try the duel code instead.' : 'Could not send the invite. Check your connection and try again.'); }
         }
       }
-    } finally { $('btn-create').disabled = false; }
+    } finally { delete $('btn-create').dataset.busy; Plays.syncButtons(); }
   }
 
   async function joinDuel(codeIn) {
@@ -281,7 +424,13 @@
     var p = readProfile(); if (p.err) return homeErr(p.err);
     var code = String(codeIn || $('inp-code').value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (code.length !== 5) return homeErr('Type the 5-letter duel code.');
-    $('btn-join').disabled = true;
+    await Plays.ensure();
+    if (Plays.atCap()) {
+      Plays.apply();
+      http('POST', 'd-' + code, { by: p.me.n, ts: Date.now(), why: 'capped' }, 2, IDBoard.duelApi(code));
+      return homeInfo(Plays.capMsg());
+    }
+    $('btn-join').disabled = true; $('btn-join').dataset.busy = '1';
     try {
       var m = await http('GET', 'm-' + code, null, 3);
       if (!m.ok) return homeErr(m.status >= 400 ? failMsg(m, '') : 'No internet connection. Please try again.');
@@ -307,7 +456,7 @@
       $('btn-share').style.display = 'none'; $('btn-copy').style.display = 'none';
       showLobby('code'); $('lobby-badge').textContent = 'Joined';
       startLoops();
-    } finally { $('btn-join').disabled = false; }
+    } finally { delete $('btn-join').dataset.busy; Plays.syncButtons(); }
   }
 
   /* ---------------- polling & state machine ---------------- */
@@ -330,7 +479,7 @@
       }
       if (g.invite && g.phase === 'lobby' && !(g.oppDoc && g.oppDoc.n)) {
         var dd = await http('GET', 'd-' + g.code, null, 1, IDBoard.duelApi(g.code));
-        if (G === g && dd.ok && !dd.missing && dd.j) { var nm2 = g.invite.n; write('PATCH', ownPath(), { left: 1 }); leaveToHome(nm2 + ' declined your invite.', true); return; }
+        if (G === g && dd.ok && !dd.missing && dd.j) { var nm2 = g.invite.n; write('PATCH', ownPath(), { left: 1 }); leaveToHome(dd.j.why === 'capped' ? (nm2 + ' has already finished their 50 Integer Duel games.') : (nm2 + ' declined your invite.'), true); return; }
       }
     } finally { g.polling = false; }
     if (G === g) step();
@@ -367,9 +516,17 @@
     }
   }
 
+  function recordGameStart() {
+    if (!G || G.playLogged) return;
+    G.playLogged = true;
+    var id = G.demo ? ('p-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6)) : ('d-' + String(G.code || '').toUpperCase());
+    Plays.record(id);
+  }
+
   function startCountdown(sec) {
     if (G.phase === 'countdown') return;
     G.phase = 'countdown';
+    recordGameStart();
     $('btn-share').style.display = ''; $('btn-copy').style.display = '';
     initGameUI();
     show('game');
@@ -581,7 +738,7 @@
   async function leaveDuel() {
     if (!G) return;
     if (!G.demo && G.phase !== 'lobby' && G.phase !== 'joined') {
-      var msg = G.done >= MIN_FORFEIT_ROUNDS ? 'Leave the duel? Your opponent will win.' : 'Leave the duel? It will not count.';
+      var msg = G.done >= MIN_FORFEIT_ROUNDS ? 'Leave the duel? Your opponent will win.' : 'Leave the duel? It will not count on the leaderboard, but it still counts as one of your 50 games.';
       if (!(await askConfirm(msg))) return;
     }
     cleanupInvite(G);
@@ -604,10 +761,13 @@
   }
 
   /* ---------------- practice vs computer ---------------- */
-  function startDemo() {
-    homeErr('');
+  async function startDemo() {
+    homeErr(''); homeInfo('');
+    await Plays.ensure();
+    if (Plays.atCap()) { Plays.apply(); return homeInfo(Plays.capMsg()); }
     var p = readProfile();
     var me = p.me || { n: ($('inp-name').value.trim() || 'Player'), g: $('inp-grade').value || '11', s: $('inp-section').value.trim() || 'Practice' };
+    if (!me.n || !me.g || !me.s) return homeErr('Type your name, grade and section first.');
     G = newGame('a', 'DEMO0', me, pickQuestionSeed());
     G.demo = true; G.opp = { n: 'Computer 🤖', g: '', s: 'Practice' }; G.oppDoc = { ans: {}, hb: 1 };
     startLoops();
@@ -650,6 +810,7 @@
       G.phase = 'joined'; G.joinedAt = Date.now();
       $('lobby-code').textContent = G.code; $('lobby-link').textContent = 'Waiting for the host to start…'; show('lobby'); return startLoops();
     }
+    recordGameStart();
     initGameUI(); show('game'); startLoops();
     // replay finished rounds
     var oa = (G.oppDoc && G.oppDoc.ans) || {}, r = 1;
@@ -687,7 +848,7 @@
       var p = profile(); if (!p || !on) return;
       var b = IDBoard.lobBucket();
       if (b !== shardBucket) { shardBucket = b; shard = 1; }
-      var body = { n: p.n, g: p.g, s: p.s, st: busy() ? 'duel' : 'idle', hb: Date.now() };
+      var body = { n: p.n, g: p.g, s: p.s, st: busy() ? 'duel' : (Plays.atCap() ? 'capped' : 'idle'), hb: Date.now() };
       for (var i = 0; i < 30; i++) {
         var r = await http('POST', 'p-' + PID, body, 1, IDBoard.lobApi(b, shard));
         if (r.ok) { lastBusy = busy(); return; }
@@ -741,6 +902,7 @@
       Object.keys(info).forEach(function (id) {
         var c = info[id]; if (id === PID || !c.seenAt || now - c.seenAt > FRESH) return;
         var v = c.v; if (IDBoard.norm(v.n) === IDBoard.norm(me.n) && IDBoard.gradeNum(v.g) === IDBoard.gradeNum(me.g)) return;
+        if (v.st === 'capped') return;
         list.push({ pid: id, n: v.n, g: v.g, s: v.s, st: v.st });
       });
       list.sort(function (a, b) { return (a.st === 'duel') - (b.st === 'duel') || a.n.localeCompare(b.n); });
@@ -754,6 +916,7 @@
         w.appendChild(nb); w.appendChild(sm);
         var bt = document.createElement('button'); bt.type = 'button';
         if (x.st === 'duel') { bt.textContent = 'In a duel'; bt.disabled = true; }
+        else if (Plays.atCap()) { bt.textContent = 'Invite'; bt.disabled = true; }
         else { bt.textContent = 'Invite'; bt.setAttribute('data-pid', x.pid); bt.onclick = function () { invite(x); }; }
         row.appendChild(w); row.appendChild(bt); host.appendChild(row);
       });
@@ -763,7 +926,7 @@
       if (await readList()) render();
     }
     function invite(x) {
-      if (G) return;
+      if (G || Plays.atCap()) return;
       var bts = document.querySelectorAll('#online-list button'); [].forEach.call(bts, function (b) { b.disabled = true; });
       createDuel({ pid: x.pid, n: x.n }).then(function () { render(); });
     }
@@ -787,15 +950,23 @@
       };
       upd(); clearInterval(tm.popTimer); tm.popTimer = setInterval(upd, 1000);
     }
-    function decline(timeout) {
+    function decline(timeout, why) {
       if (!pop) return; var p = pop;
-      closePop(timeout ? 'The invite from ' + p.n + ' expired.' : '');
+      closePop(why === 'capped' ? Plays.capMsg() : (timeout ? 'The invite from ' + p.n + ' expired.' : ''));
       var me = profile();
-      http('POST', 'd-' + p.code, { by: me ? me.n : '', ts: Date.now(), why: timeout ? 'timeout' : 'declined' }, 2, IDBoard.duelApi(p.code));
+      http('POST', 'd-' + p.code, { by: me ? me.n : '', ts: Date.now(), why: why || (timeout ? 'timeout' : 'declined') }, 2, IDBoard.duelApi(p.code));
       delInvite(p.from);
     }
+    function rejectCap(v, from) {
+      var me = profile();
+      http('POST', 'd-' + v.code, { by: me ? me.n : '', ts: Date.now(), why: 'capped' }, 2, IDBoard.duelApi(v.code));
+      delInvite(from);
+      homeInfo(Plays.capMsg());
+    }
     function accept() {
-      if (!pop) return; var p = pop; closePop('');
+      if (!pop) return;
+      if (Plays.atCap()) { decline(false, 'capped'); return; }
+      var p = pop; closePop('');
       delInvite(p.from);
       $('inp-code').value = p.code;
       joinDuel(p.code);
@@ -830,6 +1001,7 @@
       var b = await http('GET', 'b-' + best.v.code, null, 1);
       if (b.ok && !b.missing) { delInvite(best.from); return; }
       if (busy() || pop) return;
+      if (Plays.atCap()) { rejectCap(best.v, best.from); return; }
       showPop(best.v, best.from);
     }
     function stop() {
@@ -867,15 +1039,22 @@
       roster.forEach(function (x) { var o = document.createElement('option'); o.value = x.n; dl.appendChild(o); });
     } catch (e) {}
   }
+  function onIdentity() { Plays.refresh(); }
   $('inp-name').addEventListener('change', function () {
     var v = IDBoard.norm($('inp-name').value);
     var hit = roster.filter(function (x) { return IDBoard.norm(x.n) === v; })[0];
     if (hit) { $('inp-grade').value = IDBoard.gradeNum(hit.g); $('inp-section').value = hit.s; }
+    onIdentity();
+  });
+  ['inp-name', 'inp-grade', 'inp-section'].forEach(function (id) {
+    $(id).addEventListener('input', onIdentity); $(id).addEventListener('change', onIdentity);
   });
   async function refreshTop() {
     var tb = $('top-body');
     try {
-      var r = await IDBoard.fetchResults(); var top = IDBoard.aggregate(r.results, 'all').slice(0, 5);
+      var r = await IDBoard.fetchResults();
+      Plays.refresh(r.results);
+      var top = IDBoard.aggregate(r.results, 'all').slice(0, 5);
       tb.innerHTML = '';
       if (!top.length) { tb.innerHTML = '<tr><td colspan="4" style="color:#777">No duels yet — be the first!</td></tr>'; return; }
       top.forEach(function (p, i) {
@@ -921,7 +1100,7 @@
     $('btn-forget').onclick = function () { clearActive(); $('rejoin').hidden = true; };
     $('btn-leave').onclick = leaveDuel;
     $('btn-cancel').onclick = leaveDuel;
-    $('btn-again').onclick = function () { G = null; show('home'); refreshTop(); };
+    $('btn-again').onclick = function () { G = null; show('home'); refreshTop(); Plays.apply(); };
     $('btn-copy').onclick = function () {
       var url = shareUrl(G.code), done = function () { $('btn-copy').textContent = 'Copied ✔'; setTimeout(function () { $('btn-copy').textContent = 'Copy link'; }, 1500); };
       if (navigator.clipboard) navigator.clipboard.writeText(url).then(done, done); else done();
@@ -958,7 +1137,7 @@
     bar.hidden = false; $('inapp-text').textContent = 'Something went wrong on this phone’s browser. Try reloading, or open this link in Chrome.';
     if (IS_ANDROID) { $('inapp-open').hidden = false; $('inapp-open').onclick = function () { location.href = chromeIntent(); }; }
   });
-  window.__IDU = { state: function () { return G; }, online: function () { return Online.state(); } };
+  window.__IDU = { state: function () { return G; }, online: function () { return Online.state(); }, plays: function () { return Plays.snapshot(); } };
   init();
   initInApp();
 })();

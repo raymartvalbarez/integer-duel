@@ -111,6 +111,12 @@ th{background:#e8f5e9;font-size:.72rem}
 .oempty{color:#555;font-size:.85rem;line-height:1.4;padding:4px 0}
 .dot-on{display:inline-block;width:9px;height:9px;border-radius:50%;background:#2ecc71;margin-right:6px}
 #home-info{background:#e3f2fd;color:#0d47a1;padding:10px 12px;border-radius:10px;font-size:.88rem;font-weight:700;margin-top:10px;line-height:1.35}
+#plays-box{margin-top:10px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:12px;padding:10px 12px}
+#plays-count{font-weight:800;font-size:.95rem;color:#1b5e20}
+#plays-cap{margin-top:6px;font-weight:800;font-size:.88rem;color:#1b5e20;line-height:1.35}
+#plays-box.cap{background:#fff8e1;border-color:#f5c518}
+#plays-box.cap #plays-count,#plays-box.cap #plays-cap{color:#6d4c00}
+button.primary:disabled,button.secondary:disabled{opacity:.5;filter:grayscale(.15)}
 #invite-pop{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:60;padding:16px}
 #invite-pop .box{background:#fff;color:#1a1a1a;border-radius:18px;padding:20px;width:100%;max-width:380px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.5)}
 #invite-pop .box b.big{display:block;font-size:1.1rem;color:#062a1f;margin:6px 0}
@@ -170,6 +176,10 @@ th{background:#e8f5e9;font-size:.72rem}
     </div>
     <div id="home-err" class="err" hidden></div>
     <div id="home-info" hidden></div>
+    <div id="plays-box" hidden>
+      <div id="plays-count">Games played: — / 50</div>
+      <div id="plays-cap" hidden>You've finished your 50 Integer Duel games. Great job!</div>
+    </div>
     <div id="online" hidden>
       <h3><span class="dot-on"></span>Online now <span id="online-n"></span></h3>
       <div id="online-list"></div>
@@ -181,7 +191,7 @@ th{background:#e8f5e9;font-size:.72rem}
     <button class="primary" id="btn-join" style="background:linear-gradient(180deg,#8ecbff,#4a9de0);box-shadow:0 3px 0 #2d6fa8;color:#05213a">Join Duel</button>
     <button class="secondary" id="btn-demo">Practice vs Computer</button>
     <div class="how">
-      <b>How it works:</b> One player taps <b>Create Duel</b> and sends the code or link to a classmate. The other player taps <b>Join Duel</b>. Both phones get the same 10 integer questions. A correct answer pulls the rope your way; a quicker correct answer pulls harder, and a wrong answer pulls nothing. Pull the rope past your line, or have the most pull after 10 rounds, to win. At the end you only see scores — correct answers are never shown. Play as many duels as you like.
+      <b>How it works:</b> One player taps <b>Create Duel</b> and sends the code or link to a classmate. The other player taps <b>Join Duel</b>. Both phones get the same 10 integer questions. A correct answer pulls the rope your way; a quicker correct answer pulls harder, and a wrong answer pulls nothing. Pull the rope past your line, or have the most pull after 10 rounds, to win. At the end you only see scores — correct answers are never shown. Each learner can play up to 50 games, including practice vs the computer.
     </div>
     <div style="margin-top:14px"><strong style="color:#062a1f">Top duelists</strong>
       <table><thead><tr><th>#</th><th>Student</th><th>Grade</th><th>Wins</th></tr></thead><tbody id="top-body"><tr><td colspan="4" style="color:#777">Loading…</td></tr></tbody></table>
@@ -244,8 +254,8 @@ th{background:#e8f5e9;font-size:.72rem}
 
 <script>document.addEventListener('contextmenu',function(e){e.preventDefault();});</script>
 <script src="questions.js?v=20261121b"></script>
-<script src="board.js?v=20261121a"></script>
-<script src="game.js?v=20261121c"></script>
+<script src="board.js?v=20261121d"></script>
+<script src="game.js?v=20261121d"></script>
 <script src="https://raymartvalbarez.github.io/adm-portal/adm-identity.js?v=20261120a" defer></script>
 </body>
 </html>

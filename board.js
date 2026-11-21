@@ -135,5 +135,39 @@
     arr.sort(function (x, y) { return y.wins - x.wins || y.rate - x.rate || y.pull - x.pull || x.name.localeCompare(y.name); });
     return arr;
   }
-  root.IDBoard = { store: store, NS: NS, API: API, EXPORT: EXPORT, ROOT: ROOT, BUCKET_MS: BUCKET_MS, lobBucket: lobBucket, lobApi: lobApi, invApi: invApi, pid: pid, acctPid: acctPid, fnv: fnv, duelApi: duelApi, resApi: resApi, resIdx: resIdx, setResIdx: setResIdx, fetchResults: fetchResults, aggregate: aggregate, filterResults: filterResults, fmtTime: fmtTime, manilaDay: manilaDay, gradeNum: gradeNum, norm: norm };
+  /* Lifetime play cap: official results (r-) plus a side log for practice and games
+     that started but were left mid-duel. Separate namespaces so this never appears on the leaderboard. */
+  var PLAY_CAP = 50;
+  function playKey(n, g, s) { return norm(n) + '|' + gradeNum(g) + '|' + norm(s); }
+  function playDocId(n, g, s) {
+    var h = fnv(playKey(n, g, s), 2166136261).toString(36);
+    while (h.length < 7) h = '0' + h;
+    return 'c-' + h;
+  }
+  function playsNs(i) { return BASE + '-plays-' + i; }
+  function playsApi(i) { return ROOT + playsNs(i); }
+  function officialPlayIds(results, n, g, s) {
+    var key = playKey(n, g, s), out = [], seen = {};
+    (results || []).forEach(function (r) {
+      if (!r || !r.c) return;
+      var hit = ['a', 'b'].some(function (side) { var me = r[side]; return me && playKey(me.n, me.g, me.s) === key; });
+      if (!hit) return;
+      var id = 'd-' + String(r.c).toUpperCase();
+      if (!seen[id]) { seen[id] = 1; out.push(id); }
+    });
+    return out;
+  }
+  function mergePlayIds() {
+    var seen = {}, out = [];
+    for (var i = 0; i < arguments.length; i++) {
+      var arr = arguments[i] || [];
+      for (var j = 0; j < arr.length; j++) {
+        var id = arr[j];
+        if (typeof id === 'string' && id && !seen[id]) { seen[id] = 1; out.push(id); }
+      }
+    }
+    return out;
+  }
+
+  root.IDBoard = { store: store, NS: NS, API: API, EXPORT: EXPORT, ROOT: ROOT, BUCKET_MS: BUCKET_MS, lobBucket: lobBucket, lobApi: lobApi, invApi: invApi, pid: pid, acctPid: acctPid, fnv: fnv, duelApi: duelApi, resApi: resApi, resIdx: resIdx, setResIdx: setResIdx, fetchResults: fetchResults, aggregate: aggregate, filterResults: filterResults, fmtTime: fmtTime, manilaDay: manilaDay, gradeNum: gradeNum, norm: norm, PLAY_CAP: PLAY_CAP, playKey: playKey, playDocId: playDocId, playsApi: playsApi, playsNs: playsNs, officialPlayIds: officialPlayIds, mergePlayIds: mergePlayIds };
 })(window);
