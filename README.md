@@ -11,7 +11,7 @@ Teacher Raymart Valbarez · Roxas City, Philippines.
 ## How a duel works
 1. Player 1 enters name, grade level and section and taps **Create Duel**. A 5-character code and a link appear.
 2. Player 2 opens the link (or types the code), enters their own name, grade and section, and taps **Join Duel**.
-3. Both phones get the **same 10 integer questions** (same order), 20 seconds each, 4 choices. Correct = **10 pull + up to 5 speed bonus**. Wrong or time-up = no pull.
+3. Both phones get the **same 10 integer questions** (same order), 10 seconds each, 4 choices. Correct = **10 pull + up to 5 speed bonus**. Wrong or time-up = no pull.
 4. The rope moves by the difference in pull. Pull it **50 points past the center** and you win at once; otherwise the player with the most pull after round 10 wins (equal pull = draw).
 5. Only the tapped answer is marked Correct/Wrong; the right choice is never shown, and the end screen shows scores only.
 

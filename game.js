@@ -11,7 +11,7 @@
   var ADM_API = 'https://script.google.com/macros/s/AKfycbwGMSP8NmPT4GYMJZTw4qruizfFd5wzORZHZRM-HOUJOSQyyg3Gx20L5MEWsqT5EFdl-w/exec';
 
   var ROUNDS = 10;
-  var LIMIT = 20;            // seconds per question
+  var LIMIT = 10;            // seconds per question (maximum)
   var LINE = 50;             // net pull that knocks the opponent past the line
   var MAXSHIFT = 55;         // scene units the rope moves at the line
   var BASE_PULL = 10, BONUS_PULL = 5;
@@ -392,12 +392,24 @@
     for (var i = 1; i <= ROUNDS; i++) { var e = document.createElement('i'); e.id = 'dot-' + i; dots.appendChild(e); }
     setRope(0);
     $('hud-round').textContent = 'Round 1/' + ROUNDS;
-    $('hud-time').textContent = LIMIT; $('timer-bar').style.transform = 'scaleX(1)';
+    setTimerFace(LIMIT); $('timer-bar').style.transform = 'scaleX(1)';
+  }
+
+  function setTimerFace(secs) {
+    var n = Math.max(0, Math.ceil(secs));
+    var t = $('hud-time'), w = $('timer-wrap');
+    t.textContent = n;
+    t.classList.remove('warn', 'urgent');
+    if (w) w.classList.remove('warn', 'urgent');
+    if (n <= 2) { t.classList.add('urgent'); if (w) w.classList.add('urgent'); }
+    else if (n <= 3) { t.classList.add('warn'); if (w) w.classList.add('warn'); }
   }
 
   function showRound(r) {
     G.r = r; G.phase = 'q'; G.qStart = Date.now(); G.answered = false;
     saveActive();
+    setTimerFace(LIMIT);
+    $('timer-bar').style.transform = 'scaleX(1)';
     var q = G.qs[r - 1];
     $('hud-round').textContent = 'Round ' + r + '/' + ROUNDS; $('hud-status').textContent = '';
     $('q-prompt').textContent = q.p; $('q-prompt').className = q.p.length > 60 ? 'long' : '';
@@ -417,7 +429,11 @@
     if (!G || G.over || G.phase !== 'q') return;
     var el = Date.now() - G.qStart, left = Math.max(0, LIMIT - el / 1000);
     $('timer-bar').style.transform = 'scaleX(' + Math.max(0, 1 - el / (LIMIT * 1000)).toFixed(3) + ')';
-    var secs = Math.ceil(left); if (String(secs) !== $('hud-time').textContent) { $('hud-time').textContent = secs; if (secs <= 5 && secs > 0) Sound.tick(); }
+    var secs = Math.ceil(left);
+    if (String(secs) !== $('hud-time').textContent) {
+      setTimerFace(secs);
+      if (secs <= 3 && secs > 0) Sound.tick();
+    }
     if (el >= LIMIT * 1000) timeUp();
   }
 
@@ -452,6 +468,7 @@
     if (!rec || !Number.isInteger(rec.c) || rec.c < 0 || rec.c > 3 || typeof rec.ms !== 'number' || rec.ms < 0 || rec.ms > LIMIT * 1000 + 800) return { ok: false, pull: 0 };
     if (rec.c !== q.k) return { ok: false, pull: 0 };
     var ms = Math.max(600, rec.ms);
+    // Same 10 pull + up to 5 speed bonus as before; bonus is now relative to the 10 s cap.
     return { ok: true, pull: BASE_PULL + Math.round(BONUS_PULL * Math.max(0, 1 - ms / (LIMIT * 1000))) };
   }
   function totals(upTo) {
@@ -600,7 +617,7 @@
   function botSchedule(r) {
     var g = G, q = G.qs[r - 1];
     var acc = r <= 5 ? 0.85 : r <= 8 ? 0.65 : 0.5;
-    var delay = Math.round((3 + Math.random() * 10) * 1000);
+    var delay = Math.round((1 + Math.random() * 7) * 1000); // 1–8 s, always inside the 10 s limit
     setTimeout(function () {
       if (G !== g || g.over) return;
       var ok = Math.random() < acc, c = q.k;

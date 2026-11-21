@@ -55,9 +55,15 @@ th{background:#e8f5e9;font-size:.72rem}
 @keyframes pl{50%{opacity:.35}}
 /* game */
 #hud{flex:0 0 auto;padding:8px 10px 6px;background:linear-gradient(180deg,#05261c,#0a3d2e);border-bottom:1px solid #f5c51844}
-#hud-top{display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:.85rem}
+#hud-top{display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:.85rem;gap:8px}
+#hud-time{min-width:2.55rem;text-align:center;font-size:1.55rem;line-height:1.1;font-variant-numeric:tabular-nums;font-weight:900;color:#d9ffe0;background:#163d2f;padding:3px 8px 4px;border-radius:9px;box-shadow:inset 0 0 0 1px #ffffff22;flex:0 0 auto}
+#hud-time::after{content:'s';font-size:.55em;font-weight:800;margin-left:1px;opacity:.85}
+#hud-time.warn{color:#1a1200;background:#f5c518;box-shadow:none}
+#hud-time.urgent{color:#fff;background:#c62828;box-shadow:0 0 0 2px #ffcdd7}
 #timer-wrap{margin-top:6px;height:9px;background:#1a4d3a;border-radius:6px;overflow:hidden;position:relative}
 #timer-bar{height:100%;width:100%;background:linear-gradient(90deg,#66bb6a,#f5c518,#ef5350);border-radius:6px;transform-origin:left center}
+#timer-wrap.warn #timer-bar{background:#f5c518}
+#timer-wrap.urgent #timer-bar{background:#ef5350}
 #tags{display:flex;justify-content:space-between;gap:8px;padding:6px 10px 0;background:#0a3d2e}
 .tag{flex:1;min-width:0;font-size:.74rem;line-height:1.25}
 .tag.opp{text-align:right}
@@ -151,7 +157,7 @@ th{background:#e8f5e9;font-size:.72rem}
     <div class="hero">
       <div class="badge">Integers · Grade 7–12 · Any grade can duel any grade</div>
       <strong>Pull the rope with the right answers!</strong>
-      <div class="tag">Add · Subtract · Multiply · Divide · Order of operations · Absolute value · Word problems<br>10 rounds · 20 seconds each · faster correct answers pull harder</div>
+      <div class="tag">Add · Subtract · Multiply · Divide · Order of operations · Absolute value · Word problems<br>10 rounds · 10 seconds each · faster correct answers pull harder</div>
     </div>
     <label for="inp-name">Your name</label>
     <input id="inp-name" type="text" maxlength="30" autocomplete="off" placeholder="e.g. Juan Dela Cruz" list="name-list">
@@ -205,7 +211,7 @@ th{background:#e8f5e9;font-size:.72rem}
 
 <section id="screen-game" class="screen">
   <div id="hud">
-    <div id="hud-top"><span id="hud-round">Round 1/10</span><span id="hud-status" style="color:#ffe566"></span><span id="hud-time">20</span></div>
+    <div id="hud-top"><span id="hud-round">Round 1/10</span><span id="hud-status" style="color:#ffe566"></span><span id="hud-time">10</span></div>
     <div id="timer-wrap"><div id="timer-bar"></div></div>
   </div>
   <div id="tags">
@@ -239,7 +245,7 @@ th{background:#e8f5e9;font-size:.72rem}
 <script>document.addEventListener('contextmenu',function(e){e.preventDefault();});</script>
 <script src="questions.js?v=20261121b"></script>
 <script src="board.js?v=20261121a"></script>
-<script src="game.js?v=20261121b"></script>
+<script src="game.js?v=20261121c"></script>
 <script src="https://raymartvalbarez.github.io/adm-portal/adm-identity.js?v=20261120a" defer></script>
 </body>
 </html>
