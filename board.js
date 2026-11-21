@@ -8,10 +8,10 @@
   }
   var store = (function () {
     var mem = {}, ok = false;
-    try { window.store.set('__t', '1'); window.localStorage.removeItem('__t'); ok = true; } catch (e) { ok = false; }
+    try { window.localStorage.setItem('__t', '1'); window.localStorage.removeItem('__t'); ok = true; } catch (e) { ok = false; }
     return {
-      get: function (k) { try { if (ok) { var v = window.store.get(k); return v === undefined ? null : v; } } catch (e) {} return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null; },
-      set: function (k, v) { try { if (ok) { window.store.set(k, v); return; } } catch (e) {} mem[k] = String(v); },
+      get: function (k) { try { if (ok) { var v = window.localStorage.getItem(k); return v === undefined ? null : v; } } catch (e) {} return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null; },
+      set: function (k, v) { try { if (ok) { window.localStorage.setItem(k, v); return; } } catch (e) {} mem[k] = String(v); },
       del: function (k) { try { if (ok) window.localStorage.removeItem(k); } catch (e) {} delete mem[k]; }
     };
   })();
@@ -31,7 +31,21 @@
   function lobBucket(t) { return Math.floor((t || Date.now()) / BUCKET_MS); }
   function lobApi(bucket, shard) { return ROOT + BASE + '-lob-' + bucket + '-' + shard; }
   function invApi(pid) { return ROOT + BASE + '-inv-' + String(pid).toLowerCase(); }
+  /* Player id. A learner logged in to My ADM Account (localStorage adm_learner {g,s,n}) gets an id derived from
+     that identity, so the Bago SHS ADM app (1.7.0+) and this page share one id: the app keeps the learner
+     "Online now" and receives invites on any screen. Same FNV-1a as the app's DuelPresence.java. */
+  function fnv(str, seed) { var h = seed >>> 0; for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h >>> 0; }
+  function acctPid() {
+    try {
+      var me = JSON.parse(store.get('adm_learner') || 'null');
+      if (!me || typeof me.n !== 'string' || !me.n.trim()) return '';
+      var key = norm(me.n) + '|' + gradeNum(me.g) + '|' + norm(me.s);
+      var h = fnv(key, 2166136261).toString(36); while (h.length < 7) h = '0' + h;
+      return 'u' + h;
+    } catch (e) { return ''; }
+  }
   function pid() {
+    var a = acctPid(); if (a) return a;
     var p = store.get('idu-pid');
     if (!p || !/^[a-z0-9]{6,12}$/.test(p)) { p = ''; var cs = 'abcdefghijklmnopqrstuvwxyz0123456789'; for (var i = 0; i < 8; i++) p += cs[Math.floor(Math.random() * cs.length)]; store.set('idu-pid', p); }
     return p;
@@ -121,5 +135,5 @@
     arr.sort(function (x, y) { return y.wins - x.wins || y.rate - x.rate || y.pull - x.pull || x.name.localeCompare(y.name); });
     return arr;
   }
-  root.IDBoard = { store: store, NS: NS, API: API, EXPORT: EXPORT, ROOT: ROOT, BUCKET_MS: BUCKET_MS, lobBucket: lobBucket, lobApi: lobApi, invApi: invApi, pid: pid, duelApi: duelApi, resApi: resApi, resIdx: resIdx, setResIdx: setResIdx, fetchResults: fetchResults, aggregate: aggregate, filterResults: filterResults, fmtTime: fmtTime, manilaDay: manilaDay, gradeNum: gradeNum, norm: norm };
+  root.IDBoard = { store: store, NS: NS, API: API, EXPORT: EXPORT, ROOT: ROOT, BUCKET_MS: BUCKET_MS, lobBucket: lobBucket, lobApi: lobApi, invApi: invApi, pid: pid, acctPid: acctPid, fnv: fnv, duelApi: duelApi, resApi: resApi, resIdx: resIdx, setResIdx: setResIdx, fetchResults: fetchResults, aggregate: aggregate, filterResults: filterResults, fmtTime: fmtTime, manilaDay: manilaDay, gradeNum: gradeNum, norm: norm };
 })(window);

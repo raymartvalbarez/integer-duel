@@ -845,6 +845,22 @@
     } catch (e) {}
     var room = (/[?&]room=([A-Za-z0-9]{5})/.exec(location.search) || [])[1];
     if (room) $('inp-code').value = room.toUpperCase();
+    // Bago SHS ADM app 1.7.0+: the learner tapped Accept on an invite pop-up somewhere else in the app.
+    // The app already removed the invite; join as soon as the ADM account has filled in the name.
+    var acc = (/[?&]accept=([A-Za-z0-9]{5})(?:&|$)/.exec(location.search) || [])[1];
+    if (acc && !DEMO) {
+      acc = acc.toUpperCase(); $('inp-code').value = acc;
+      try { history.replaceState(null, '', location.pathname + (nsQ ? '?ns=' + NS : '')); } catch (e) {}
+      homeInfo('Joining the duel you accepted…');
+      var t0 = Date.now();
+      (function waitJoin() {
+        if (G) return;
+        var ready = !readProfile().err, locked = !!$('adm-id-note');
+        if (ready && (locked || Date.now() - t0 > 4000)) return joinDuel(acc);
+        if (Date.now() - t0 > 10000) { homeInfo(''); return homeErr('Type your name, grade and section, then tap Join to accept the duel.'); }
+        setTimeout(waitJoin, 300);
+      })();
+    }
     if (DEMO) { $('demo-banner').hidden = false; $('btn-create').style.display = 'none'; $('btn-join').style.display = 'none'; $('inp-code').style.display = 'none'; document.querySelector('label[for=inp-code]').style.display = 'none'; document.querySelector('.divider').style.display = 'none'; $('btn-demo').className = 'primary'; $('btn-demo').textContent = 'Start Practice Duel'; }
     try {
       var st = JSON.parse(IDBoard.store.get('idu-active') || 'null');
