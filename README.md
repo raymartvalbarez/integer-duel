@@ -15,7 +15,7 @@ Teacher Raymart Valbarez · Roxas City, Philippines.
 4. The rope moves by the difference in pull. Pull it **50 points past the center** and you win at once; otherwise the player with the most pull after round 10 wins (equal pull = draw).
 5. Only the tapped answer is marked Correct/Wrong; the right choice is never shown, and the end screen shows scores only.
 
-Questions (`questions.js`): add, subtract, multiply and divide signed integers, order of operations, absolute value, comparing/ordering integers, missing numbers, and word problems (temperature, elevation, money, floors, game points). Questions are generated from a shared random seed with a built-in check; `node tools/test_questions.js` re-verifies 40,000 generated items.
+Questions (`questions.js`): add, subtract, multiply and divide signed integers, order of operations, absolute value, comparing/ordering integers, number line, missing numbers, and word problems (temperature, elevation, money, floors, debts, game points), plus a large curated bank of worded items. Each 10-question duel is 5 easy, 3 average and 2 difficult (50-30-20). Both phones build the same items from a shared seed; `node tools/test_questions.js` re-verifies 10,000 duels (100,000 items).
 
 ## Networking (no paid backend)
 MantleDB namespace `bnhs-integerduel-nov2026` (`?ns=bnhs-integerduel-…` switches namespace for testing). Each player writes only their own small document (`a-CODE`, `b-CODE`: profile, heartbeat, answers) and polls the opponent about once per second, so there is no WebRTC and it works on mobile data. The host's `m-CODE` holds the question seed. Finished duels are written once to `r-CODE`, which the leaderboard reads.

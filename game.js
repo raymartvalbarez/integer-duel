@@ -186,7 +186,36 @@
     timers.tick = setInterval(tick, 100);
   }
 
+  /* Remember recent question prompts (not answers) so the HOST can re-roll the
+     shared seed until the new duel overlaps little with the last ~200 items on
+     this phone. The joiner still uses the published seed, so both get the same set. */
+  var SEEN_Q = 'idu-qseen';
+  function recentPrompts() {
+    try { var a = JSON.parse(IDBoard.store.get(SEEN_Q) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+  }
+  function rememberQuestions(qs) {
+    if (!qs || !qs.length) return;
+    var a = recentPrompts();
+    qs.forEach(function (q) { if (q && q.p) a.push(q.p); });
+    if (a.length > 200) a = a.slice(-200);
+    try { IDBoard.store.set(SEEN_Q, JSON.stringify(a)); } catch (e) {}
+  }
+  function pickQuestionSeed() {
+    var avoid = {}, rec = recentPrompts();
+    for (var i = 0; i < rec.length; i++) avoid[rec[i]] = 1;
+    var best = null;
+    for (var t = 0; t < 16; t++) {
+      var s = Math.floor(Math.random() * 2147483000) + 1;
+      var qs = IDQ.make(s, ROUNDS), hit = 0;
+      for (var j = 0; j < qs.length; j++) if (avoid[qs[j].p]) hit++;
+      if (!best || hit < best.hit) best = { s: s, hit: hit };
+      if (hit === 0) break;
+    }
+    return best.s;
+  }
+
   /* ---------------- create / join ---------------- */
+
   function readProfile() {
     var name = $('inp-name').value.replace(/\s+/g, ' ').trim();
     var grade = $('inp-grade').value, section = $('inp-section').value.replace(/\s+/g, ' ').trim();
@@ -224,7 +253,7 @@
         if (r.missing) code = c;
       }
       if (!code) return homeErr('Could not make a room code. Try again.');
-      var seed = Math.floor(Math.random() * 2147483000) + 1;
+      var seed = pickQuestionSeed();
       var m = await http('POST', 'm-' + code, { v: 1, seed: seed, created: Date.now(), host: p.me.n }, 3);
       if (!m.ok) return homeErr(failMsg(m, 'Could not create the duel.'));
       var d = await http('POST', 'a-' + code, { n: p.me.n, g: p.me.g, s: p.me.s, hb: Date.now(), ans: {} }, 3);
@@ -472,6 +501,7 @@
     show('result');
   }
   function finish(how, w) {
+    if (G && G.qs) rememberQuestions(G.qs);
     if (G.over) return;
     G.over = true; stopTimers(); clearActive();
     var t = totals(G.done || 0);
@@ -561,7 +591,7 @@
     homeErr('');
     var p = readProfile();
     var me = p.me || { n: ($('inp-name').value.trim() || 'Player'), g: $('inp-grade').value || '11', s: $('inp-section').value.trim() || 'Practice' };
-    G = newGame('a', 'DEMO0', me, Math.floor(Math.random() * 2147483000) + 1);
+    G = newGame('a', 'DEMO0', me, pickQuestionSeed());
     G.demo = true; G.opp = { n: 'Computer 🤖', g: '', s: 'Practice' }; G.oppDoc = { ans: {}, hb: 1 };
     startLoops();
     G.phase = 'idle';
@@ -569,7 +599,7 @@
   }
   function botSchedule(r) {
     var g = G, q = G.qs[r - 1];
-    var acc = r <= 3 ? 0.85 : r <= 7 ? 0.65 : 0.5;
+    var acc = r <= 5 ? 0.85 : r <= 8 ? 0.65 : 0.5;
     var delay = Math.round((3 + Math.random() * 10) * 1000);
     setTimeout(function () {
       if (G !== g || g.over) return;

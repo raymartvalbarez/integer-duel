@@ -3,9 +3,11 @@
  * so both phones in a duel see identical items without sending them over the network.
  * Every item carries an independent check ("ev" expression, "chk" test, or "kind")
  * that tools/test_questions.js re-verifies with eval on thousands of seeds.
+ * A 10-question duel uses a 50-30-20 split: 5 easy, 3 average, 2 difficult.
  * Topics: add/subtract/multiply/divide signed integers, order of operations,
- * absolute value, comparing/ordering, missing numbers, and word problems
- * (temperature, elevation, money, floors, game points). */
+ * absolute value, comparing/ordering, number line, missing numbers, and word
+ * problems (temperature, elevation, money, floors, debts, game points), plus a
+ * large curated bank of worded items whose answers are computed in code. */
 (function (root, factory) {
   var api = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
@@ -245,10 +247,10 @@
   function meters(n) { return fmt(n) + ' m'; }
   function peso(n) { n = z(n); return (n < 0 ? MINUS : '') + '\u20b1' + Math.abs(n); }
   function wordRes(R, p, evx, ans, f, wr) { return { p: p, ev: evx, a: ans, q: numOpts(R, ans, wr, f) }; }
-  var PLACES = ['Baguio', 'Tagaytay', 'Sagada', 'Roxas City', 'Mt. Pulag'];
-  var NAMES = ['Ana', 'Ben', 'Carla', 'Dino', 'Mica', 'Rey', 'Liza', 'Jun'];
+  var PLACES = ['Baguio', 'Tagaytay', 'Sagada', 'Roxas City', 'Mt. Pulag', 'Bago City', 'Dumaguete', 'La Trinidad', 'Malaybalay', 'Mt. Kanlaon'];
+  var NAMES = ['Ana', 'Ben', 'Carla', 'Dino', 'Mica', 'Rey', 'Liza', 'Jun', 'Paolo', 'Tina', 'Noel', 'Grace', 'Carlo', 'Ivy'];
   function genWord(R, L) {
-    var kinds = L === 1 ? ['temp1', 'elevdiff', 'floor1', 'buy'] : L === 2 ? ['temp2', 'sub', 'earn', 'points'] : ['temp3', 'sub3', 'share', 'bank', 'points3'];
+    var kinds = L === 1 ? ['temp1', 'elevdiff', 'floor1', 'buy', 'debt1', 'gap1'] : L === 2 ? ['temp2', 'sub', 'earn', 'points', 'hike', 'owe2'] : ['temp3', 'sub3', 'share', 'bank', 'points3', 'climb3', 'ledger'];
     var k = R.pick(kinds), nm = R.pick(NAMES), pl = R.pick(PLACES), a, b, c, n, t;
     switch (k) {
       case 'temp1': a = R.int(-8, 10); b = R.int(3, 15); var up = R.f() < 0.5;
@@ -288,18 +290,177 @@
       case 'bank': a = R.int(80, 300); b = R.int(100, 500); c = R.int(30, 200);
         return wordRes(R, nm + '\u2019s account balance is ' + peso(-a) + '. ' + nm + ' deposits ' + peso(b) + ' and then withdraws ' + peso(c) + '. What is the new balance?',
           evs([-a, '+', b, '-', c]), -a + b - c, peso, [-a - b - c, a + b - c, -a + b + c, a - b + c]);
+      case 'debt1': a = R.int(20, 80); b = R.int(10, 40);
+        return wordRes(R, nm + ' owes ' + peso(a) + ' and pays ' + peso(b) + '. What is the remaining balance? (A negative balance means money still owed.)',
+          evs([-a, '+', b]), -a + b, peso, [-a - b, a - b, a + b, b - a]);
+      case 'gap1': a = R.int(2, 15); b = R.int(3, 18); if (a === b) b += 2;
+        return wordRes(R, 'On a number line, how many units apart are ' + fmt(-a) + ' and ' + fmt(b) + '?',
+          'Math.abs((' + (-a) + ')-(' + b + '))', a + b, function (v) { return String(v); }, [b - a, Math.abs(b - a), a - b, -(a + b)]);
+      case 'hike': a = R.int(40, 160); b = R.int(20, 90); c = R.int(10, 70);
+        return wordRes(R, nm + ' starts a hike at ' + meters(a) + ', climbs ' + b + ' m, then descends ' + c + ' m. What is the new elevation?',
+          evs([a, '+', b, '-', c]), a + b - c, meters, [a - b + c, a + b + c, a - b - c, b - c]);
+      case 'owe2': a = R.int(80, 250); b = R.int(3, 6); c = R.int(20, 60);
+        return wordRes(R, nm + ' owes ' + peso(a) + ' and borrows another ' + peso(c) + ' each day for ' + b + ' days. What is the balance then?',
+          evs([-a, '-', b, '*', c]), -a - b * c, peso, [-a + b * c, a - b * c, a + b * c, -a - c]);
+      case 'climb3': a = R.int(80, 250); b = R.int(30, 100); c = R.int(20, 80); var f = R.int(10, 60);
+        return wordRes(R, 'A cable car starts at ' + meters(a) + ', rises ' + b + ' m, drops ' + c + ' m, then rises ' + f + ' m. What is its final elevation?',
+          evs([a, '+', b, '-', c, '+', f]), a + b - c + f, meters, [a - b + c + f, a + b + c + f, a + b - c - f, a - b - c + f]);
+      case 'ledger': a = R.int(50, 200); b = R.int(80, 250); c = R.int(20, 90); n = R.int(2, 5);
+        return wordRes(R, nm + ' has a balance of ' + peso(-a) + ', receives ' + peso(b) + ', then pays ' + peso(c) + ' each to ' + n + ' vendors. What is the new balance?',
+          evs([-a, '+', b, '-', n, '*', c]), -a + b - n * c, peso, [-a - b - n * c, -a + b + n * c, a + b - n * c, -a + b - c]);
       default: a = R.int(10, 40); b = R.int(3, 7); c = R.int(2, 6); n = R.int(3, 9);
         return wordRes(R, nm + ' starts a game with ' + fmt(-a) + ' points. Each round ' + nm + ' loses ' + c + ' points. After ' + n + ' rounds, what is the score?',
           evs([-a, '-', n, '*', c]), -a - n * c, fmt, [-a + n * c, a - n * c, a + n * c, -a - c]);
     }
   }
 
+
+  function genChain(R, L) {
+    var a, b, c, d, t, ans, wrongs;
+    if (L === 1) {
+      a = R.nz(-9, 9); b = R.nz(-9, 9); c = R.nz(-9, 9);
+      t = R.f() < 0.5 ? [a, '+', b, '+', c] : [a, '+', b, '-', c];
+      ans = t[3] === '+' ? a + b + c : a + b - c;
+      wrongs = [a + b + (t[3] === '+' ? -c : c), a - b + c, a + b, -(ans)];
+    } else if (L === 2) {
+      a = R.nz(-20, 20); b = R.nz(-20, 20); c = R.nz(-20, 20); d = R.nz(-12, 12);
+      t = [a, '+', b, '-', c, '+', d];
+      ans = a + b - c + d;
+      wrongs = [a + b + c + d, a - b - c + d, a + b - c - d, lr(t)];
+    } else {
+      a = R.nz(-30, 30); b = R.nz(-20, 20); c = R.nz(-20, 20); d = R.nz(-15, 15);
+      t = [a, '-', b, '+', c, '-', d];
+      ans = a - b + c - d;
+      wrongs = [a + b + c - d, a - b - c - d, a - b + c + d, lr(t)];
+    }
+    return { p: rend(t) + ' = ?', ev: evs(t), a: ans, q: numOpts(R, ans, wrongs) };
+  }
+  function genLine(R, L) {
+    var a, d, b, ev, ans, p, wr;
+    if (L === 1) {
+      a = R.int(-12, 12); d = R.int(1, 8); var left = R.f() < 0.5;
+      ev = left ? evs([a, '-', d]) : evs([a, '+', d]);
+      ans = left ? a - d : a + d;
+      p = 'On the number line, which integer is ' + d + ' units to the ' + (left ? 'left' : 'right') + ' of ' + fmt(a) + '?';
+      wr = [left ? a + d : a - d, d - a, -ans, a];
+    } else if (L === 2) {
+      a = R.int(-25, 25); b = R.int(-25, 25); if (a === b) b += R.nz(-5, 5);
+      ev = 'Math.abs((' + a + ')-(' + b + '))'; ans = Math.abs(a - b);
+      p = 'How many units apart are ' + fmt(a) + ' and ' + fmt(b) + ' on the number line?';
+      wr = [a - b, b - a, a + b, Math.abs(a) + Math.abs(b)];
+    } else {
+      a = R.int(-20, 20); var d1 = R.int(2, 12), d2 = R.int(2, 12);
+      ev = evs([a, '-', d1, '+', d2]); ans = a - d1 + d2;
+      p = 'A point starts at ' + fmt(a) + ' on the number line, moves ' + d1 + ' units left, then ' + d2 + ' units right. Where is it now?';
+      wr = [a + d1 - d2, a - d1 - d2, a + d1 + d2, d2 - d1];
+    }
+    return { p: p, ev: ev, a: ans, q: numOpts(R, ans, wr) };
+  }
+  function genOpp(R, L) {
+    var a, b, ev, ans, p, wr;
+    if (L === 1) {
+      a = R.nz(-20, 20);
+      if (R.f() < 0.5) {
+        ev = '-(' + a + ')'; ans = z(-a);
+        p = 'What is the opposite (additive inverse) of ' + fmt(a) + '?';
+        wr = [a, Math.abs(a), 0, a + 1];
+      } else {
+        ev = '(' + a + ')+(' + (-a) + ')'; ans = 0;
+        p = fmt(a) + ' + (the opposite of ' + fmt(a) + ') = ?';
+        wr = [a, -a, 2 * a, 1];
+      }
+    } else {
+      a = R.nz(-20, 20); b = R.nz(-15, 15);
+      ev = '-((' + a + ')+(' + b + '))'; ans = z(-(a + b));
+      p = 'What is the opposite of (' + rend([a, '+', b]) + ')?';
+      wr = [a + b, -a + b, a - b, Math.abs(a + b)];
+    }
+    return { p: p, ev: ev, a: ans, q: numOpts(R, ans, wr) };
+  }
+
+  /* Curated bank: distinctive worded items with answers computed in code (never typed by hand). */
+  function buildBank() {
+    var B = { 1: [], 2: [], 3: [] };
+    function add(L, p, ev, ans, wr, f) {
+      ans = z(ans);
+      if (typeof ans !== 'number' || !isFinite(ans) || Math.floor(ans) !== ans) return;
+      B[L].push({ p: p, ev: ev, a: ans, wr: wr || [], f: f });
+    }
+    var a, b, d, s;
+    for (a = -15; a <= 15; a++) if (a !== 0) {
+      add(1, 'The opposite (additive inverse) of ' + fmt(a) + ' is ?', '-(' + a + ')', -a, [a, Math.abs(a), 0, a + 1]);
+      add(1, '|' + fmt(a) + '| = ?', 'Math.abs(' + a + ')', Math.abs(a), [-Math.abs(a), a, -a, 0]);
+    }
+    for (a = -10; a <= 10; a++) {
+      for (d = 2; d <= 8; d++) {
+        add(1, 'On the number line, the integer ' + d + ' units to the left of ' + fmt(a) + ' is ?', evs([a, '-', d]), a - d, [a + d, d - a, -a, a]);
+        add(1, 'On the number line, the integer ' + d + ' units to the right of ' + fmt(a) + ' is ?', evs([a, '+', d]), a + d, [a - d, d - a, -a, a]);
+      }
+    }
+    for (a = -8; a <= 8; a++) {
+      for (b = a + 1; b <= 8; b++) {
+        add(1, 'How many units apart are ' + fmt(a) + ' and ' + fmt(b) + ' on the number line?', 'Math.abs((' + a + ')-(' + b + '))', Math.abs(a - b), [a - b, b + a, Math.abs(a) + Math.abs(b), b]);
+        add(1, 'The distance between ' + degC(a) + ' and ' + degC(b) + ' is how many degrees?', 'Math.abs((' + a + ')-(' + b + '))', Math.abs(a - b), [a - b, a + b, b, a], function (v) { return v + '\u00b0C'; });
+      }
+    }
+    for (a = -20; a <= 12; a += 2) {
+      for (d = 3; d <= 9; d += 2) {
+        add(2, 'A thermometer reads ' + degC(a) + ', then the temperature drops ' + d + '\u00b0C. What is the new reading?', evs([a, '-', d]), a - d, [a + d, d - a, -a, a], degC);
+        add(2, 'A thermometer reads ' + degC(a) + ', then the temperature rises ' + d + '\u00b0C. What is the new reading?', evs([a, '+', d]), a + d, [a - d, d - a, -a, a], degC);
+      }
+    }
+    for (a = 20; a <= 80; a += 5) {
+      for (b = 15; b <= 45; b += 5) {
+        add(2, 'A diver is at ' + meters(-a) + ' and swims up ' + b + ' m. What is the new elevation?', evs([-a, '+', b]), -a + b, [-a - b, a - b, a + b, -b], meters);
+        add(2, 'A diver is at ' + meters(-a) + ' and dives another ' + b + ' m. What is the new elevation?', evs([-a, '-', b]), -a - b, [-a + b, a + b, a - b, -a], meters);
+      }
+    }
+    for (a = 40; a <= 200; a += 10) {
+      for (b = 20; b <= 80; b += 10) {
+        add(2, 'A debt of ' + peso(a) + ' is reduced by a payment of ' + peso(b) + '. What is the remaining balance?', evs([-a, '+', b]), -a + b, [-a - b, a - b, a + b, -b], peso);
+      }
+    }
+    for (a = -12; a <= 6; a += 2) {
+      for (b = 4; b <= 10; b++) {
+        for (d = 5; d <= 11; d += 2) {
+          add(3, 'The temperature was ' + degC(a) + '. It rose ' + b + '\u00b0C, then dropped ' + d + '\u00b0C. What is the temperature now?', evs([a, '+', b, '-', d]), a + b - d, [a - b - d, a + b + d, a - b + d, -(a + b - d)], degC);
+        }
+      }
+    }
+    for (a = 50; a <= 160; a += 10) {
+      for (b = 20; b <= 70; b += 10) {
+        for (d = 15; d <= 55; d += 10) {
+          add(3, 'A submarine at ' + meters(-a) + ' rises ' + b + ' m, then dives ' + d + ' m. What is its elevation now?', evs([-a, '+', b, '-', d]), -a + b - d, [-a - b - d, -a + b + d, a + b - d, -a - b + d], meters);
+        }
+      }
+    }
+    for (a = 80; a <= 200; a += 20) {
+      for (b = 3; b <= 6; b++) {
+        for (d = 15; d <= 40; d += 5) {
+          add(3, 'A balance of ' + peso(-a) + ' changes by ' + peso(-d) + ' each day for ' + b + ' days. What is the new balance?', evs([-a, '-', b, '*', d]), -a - b * d, [-a + b * d, a - b * d, a + b * d, -a - d], peso);
+        }
+      }
+    }
+    return B;
+  }
+  var BANK = buildBank();
+  function genBank(R, L) {
+    var pool = BANK[L];
+    if (!pool || !pool.length) return genAdd(R, L);
+    var item = R.pick(pool);
+    return { p: item.p, ev: item.ev, a: item.a, q: numOpts(R, item.a, item.wr, item.f) };
+  }
+  function bankSize() {
+    return { 1: BANK[1].length, 2: BANK[2].length, 3: BANK[3].length, total: BANK[1].length + BANK[2].length + BANK[3].length };
+  }
+
   var TIERS = [
-    { from: 1, to: 3, pool: [['add', 1], ['sub', 1], ['mul', 1], ['div', 1], ['cmp', 1], ['abs', 1], ['word', 1]] },
-    { from: 4, to: 7, pool: [['add', 2], ['sub', 2], ['mul', 2], ['div', 2], ['order', 2], ['abs', 2], ['missing', 2], ['cmp', 2], ['word', 2]] },
-    { from: 8, to: 99, pool: [['order', 3], ['word', 3], ['missing', 3], ['abs', 3], ['mul', 3], ['cmp', 3], ['add', 3], ['sub', 3]] }
+    { from: 1, to: 5, pool: [['add', 1], ['sub', 1], ['mul', 1], ['div', 1], ['cmp', 1], ['abs', 1], ['word', 1], ['line', 1], ['opp', 1], ['chain', 1], ['bank', 1]] },
+    { from: 6, to: 8, pool: [['add', 2], ['sub', 2], ['mul', 2], ['div', 2], ['order', 2], ['abs', 2], ['missing', 2], ['cmp', 2], ['word', 2], ['line', 2], ['chain', 2], ['bank', 2]] },
+    { from: 9, to: 99, pool: [['order', 3], ['word', 3], ['missing', 3], ['abs', 3], ['mul', 3], ['cmp', 3], ['add', 3], ['sub', 3], ['div', 3], ['line', 3], ['chain', 3], ['bank', 3]] }
   ];
-  var GEN = { add: genAdd, sub: genSub, mul: genMul, div: genDiv, order: genOrder, abs: genAbs, cmp: genCmp, missing: genMissing, word: genWord };
+  var GEN = { add: genAdd, sub: genSub, mul: genMul, div: genDiv, order: genOrder, abs: genAbs, cmp: genCmp, missing: genMissing, word: genWord, line: genLine, opp: genOpp, chain: genChain, bank: genBank };
+
 
   function make(seed, n) {
     n = n || 10;
@@ -310,22 +471,23 @@
       var used = out.map(function (q) { return q.t; });
       var avail = tier.pool.filter(function (e) { return used.indexOf(e[0] + e[1]) < 0; });
       if (!avail.length) avail = tier.pool;
-      var q = null, g = 0;
-      while (g++ < 30) {
+      var q = null, g = 0, Lv = tier.pool[0][1];
+      while (g++ < 80) {
         var e = R.pick(avail);
         var cand = GEN[e[0]](R, e[1]);
-        if (!cand.q || cand.q.k < 0 || seenP[cand.p]) continue;
-        cand.t = e[0] + e[1]; q = cand; break;
+        if (!cand || !cand.q || cand.q.k < 0 || cand.q.o.length !== 4 || seenP[cand.p]) continue;
+        if (new Set(cand.q.o).size !== 4) continue;
+        cand.t = e[0] + e[1]; cand.L = e[1]; q = cand; break;
       }
-      if (!q) { q = genAdd(R, 1); q.t = 'add1'; }
+      if (!q) { q = genAdd(R, Lv); q.t = 'add' + Lv; q.L = Lv; }
       seenP[q.p] = 1;
       out.push(q);
     }
     return out.map(function (q, i) {
-      var o = { i: i + 1, t: q.t, p: q.p, o: q.q.o, k: q.q.k };
+      var o = { i: i + 1, t: q.t, L: q.L, p: q.p, o: q.q.o, k: q.q.k };
       if (q.ev) o.ev = q.ev; if (q.chk) o.chk = q.chk; if (q.kind) o.kind = q.kind; o.a = q.a;
       return o;
     });
   }
-  return { make: make, mulberry32: mulberry32 };
+  return { make: make, mulberry32: mulberry32, bankSize: bankSize };
 });
