@@ -28,13 +28,27 @@ select{padding:9px 12px;border-radius:10px;border:0;font-weight:700;font-size:.8
 table{width:100%;border-collapse:collapse;font-size:.86rem}
 th,td{padding:7px 5px;border-bottom:1px solid rgba(255,255,255,.12);text-align:left;vertical-align:top}
 th{color:#ffe566;font-size:.72rem;letter-spacing:.4px;text-transform:uppercase;position:sticky;top:0;background:#0a3d2e}
-tr.r1{background:rgba(251,191,36,.16)}tr.r2{background:rgba(231,229,228,.12)}tr.r3{background:rgba(251,146,60,.14)}
-td.rk{font-weight:900;white-space:nowrap;width:3em}td.w{font-weight:900;color:#ffe566}td.num{white-space:nowrap}
-.gb{display:inline-block;background:#f5c518;color:#062a1f;font-weight:900;font-size:.68rem;padding:1px 6px;border-radius:6px;margin-left:4px}
 .win{color:#86efac;font-weight:800}
 .empty{opacity:.75;text-align:center;padding:26px 8px}
 .foot{margin-top:14px;font-size:.78rem;opacity:.9;display:flex;gap:12px;flex-wrap:wrap;justify-content:space-between}
 .foot a{color:#ffe566;font-weight:800;text-decoration:none}
+/* Ranking cards — mobile-first (~390px) */
+.rank-list{display:flex;flex-direction:column;gap:8px}
+.rrow{display:grid;grid-template-columns:2.1em 48px minmax(0,1fr) auto;gap:8px 10px;align-items:center;padding:10px 8px;border-radius:14px;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08)}
+.rrow.r1{background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.45)}
+.rrow.r2{background:rgba(231,229,228,.14);border-color:rgba(231,229,228,.3)}
+.rrow.r3{background:rgba(251,146,60,.16);border-color:rgba(251,146,60,.35)}
+.rk{font-weight:900;font-size:1.05rem;text-align:center;line-height:1}
+.av{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;font-weight:900;font-size:.85rem;overflow:hidden;color:#fff;letter-spacing:.02em;box-shadow:0 0 0 2px rgba(255,255,255,.18)}
+.av img{width:100%;height:100%;object-fit:cover;display:block}
+.who{min-width:0}
+.nm{font-weight:800;font-size:.98rem;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gs{margin-top:2px;font-size:.75rem;font-weight:700;opacity:.88}
+.stats{display:grid;grid-template-columns:repeat(3, auto);gap:2px 9px;text-align:center;font-size:.62rem;font-weight:750;letter-spacing:.02em;text-transform:uppercase;opacity:.9}
+.stats b{display:block;font-size:.95rem;font-weight:900;letter-spacing:0;text-transform:none;color:#fff}
+.stats .w b{color:#ffe566}
+.stats .pct, .stats .pull{grid-column:span 3;display:flex;justify-content:space-between;gap:8px;text-transform:none;font-size:.72rem;letter-spacing:0;opacity:1;margin-top:2px}
+.stats .pct b, .stats .pull b{display:inline;font-size:.78rem}
 @media (max-width:860px){.grid{grid-template-columns:1fr}.meta{text-align:left}}
 </style>
 </head>
@@ -57,11 +71,8 @@ td.rk{font-weight:900;white-space:nowrap;width:3em}td.w{font-weight:900;color:#f
 <div class="grid">
   <div class="panel">
     <h2>Ranking by wins <span class="count" id="c-rank">0</span></h2>
-    <div class="scroll"><table>
-      <thead><tr><th>#</th><th>Student</th><th>Grade · Sec</th><th>W</th><th>L</th><th>D</th><th>Win %</th><th>Pull</th></tr></thead>
-      <tbody id="rank-body"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
-    </table></div>
-    <p style="font-size:.74rem;opacity:.8;margin:8px 0 0">Ranked by wins, then win rate, then total pull points. A forfeit by the opponent counts as a win. Any grade can duel any grade.</p>
+    <div class="scroll"><div class="rank-list" id="rank-body"><div class="empty">Loading…</div></div></div>
+    <p style="font-size:.74rem;opacity:.8;margin:8px 0 0">Ranked by wins, then win rate, then total pull points. A forfeit by the opponent counts as a win. Any grade can duel any grade. Profile pictures come from My ADM Account; initials show when there is no photo.</p>
   </div>
   <div class="panel">
     <h2>Recent duels <span class="count" id="c-recent">0</span></h2>
@@ -76,10 +87,25 @@ td.rk{font-weight:900;white-space:nowrap;width:3em}td.w{font-weight:900;color:#f
 <script>
 (function(){
   var B = window.IDBoard, grade = 'all', all = [];
+  var ADM_API = 'https://script.google.com/macros/s/AKfycbwGMSP8NmPT4GYMJZTw4qruizfFd5wzORZHZRM-HOUJOSQyyg3Gx20L5MEWsqT5EFdl-w/exec';
   var q = location.search.indexOf('ns=') >= 0 ? location.search : '';
+  var testNs = /[?&]ns=([\w-]+)/.exec(location.search || '');
+  var officialNs = !testNs || testNs[1] === 'bnhs-integerduel-nov2026';
   document.getElementById('play-link').href = './' + q;
+  var PHOTOS = {}, pal = ['#1d4ed8','#0f766e','#b45309','#9f1239','#6d28d9','#0369a1','#15803d','#c2410c'];
   function td(text, cls){ var e=document.createElement('td'); if(cls) e.className=cls; e.textContent=text; return e; }
   function who(p){ return p.n + ' (G' + B.gradeNum(p.g) + (p.s ? '-' + p.s : '') + ')'; }
+  function initials(n){ return String(n||'').trim().split(/\s+/).filter(Boolean).slice(0,2).map(function(p){ return p.charAt(0).toUpperCase(); }).join('') || '?'; }
+  function avColor(n){ var h=0, s=String(n||''); for (var i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i))>>>0; return pal[h%pal.length]; }
+  function pKey(p, loose){ return B.norm(p.name)+'|'+B.gradeNum(p.grade)+(loose?'':'|'+B.norm(p.section||'')); }
+  function remember(ph){
+    if (!ph || !ph.data) return;
+    var url = 'data:'+(ph.mime||'image/jpeg')+';base64,'+ph.data;
+    var loose = B.norm(ph.n)+'|'+B.gradeNum(ph.g), full = loose+'|'+B.norm(ph.s||'');
+    PHOTOS[full]=url; if (!PHOTOS[loose]) PHOTOS[loose]=url;
+    if (ph.id) PHOTOS['id:'+ph.id]=url;
+  }
+  function photoFor(p){ return PHOTOS[pKey(p)] || PHOTOS[pKey(p, true)] || ''; }
   function periodFilter(){
     var v = document.getElementById('period').value;
     if (v === 'all') return {};
@@ -92,14 +118,31 @@ td.rk{font-weight:900;white-space:nowrap;width:3em}td.w{font-weight:900;color:#f
     var res = B.filterResults(all, periodFilter());
     var players = B.aggregate(res, grade);
     var rb = document.getElementById('rank-body'); rb.innerHTML = '';
-    if (!players.length) { rb.innerHTML = '<tr><td colspan="8" class="empty">No duels yet — be the first to play!</td></tr>'; }
+    if (!players.length) { rb.innerHTML = '<div class="empty">No duels yet — be the first to play!</div>'; }
     players.forEach(function(p,i){
-      var tr = document.createElement('tr'); if (i<3) tr.className = 'r'+(i+1);
-      tr.appendChild(td(['🥇','🥈','🥉'][i] || String(i+1), 'rk'));
-      tr.appendChild(td(p.name)); tr.appendChild(td('G'+p.grade+(p.section?' · '+p.section:'')));
-      tr.appendChild(td(p.wins,'w')); tr.appendChild(td(p.losses)); tr.appendChild(td(p.draws));
-      tr.appendChild(td(Math.round(p.rate*100)+'%','num')); tr.appendChild(td(p.pull,'num'));
-      rb.appendChild(tr);
+      var row = document.createElement('div');
+      row.className = 'rrow'+(i<3?' r'+(i+1):'');
+      var rk = document.createElement('div'); rk.className='rk'; rk.textContent = ['🥇','🥈','🥉'][i] || String(i+1);
+      var av = document.createElement('div'); av.className='av'; av.style.background = avColor(p.name);
+      var src = photoFor(p);
+      if (src) { var im=document.createElement('img'); im.alt=''; im.src=src; av.appendChild(im); }
+      else av.textContent = initials(p.name);
+      var whoEl = document.createElement('div'); whoEl.className='who';
+      var nm = document.createElement('div'); nm.className='nm'; nm.textContent=p.name;
+      var gs = document.createElement('div'); gs.className='gs'; gs.textContent='G'+p.grade+(p.section?' · '+p.section:'');
+      whoEl.appendChild(nm); whoEl.appendChild(gs);
+      var st = document.createElement('div'); st.className='stats';
+      [['w','W',p.wins],['','L',p.losses],['','D',p.draws]].forEach(function(x){
+        var s=document.createElement('span'); if(x[0]) s.className=x[0];
+        s.appendChild(document.createTextNode(x[1]));
+        var b=document.createElement('b'); b.textContent=String(x[2]); s.appendChild(b);
+        st.appendChild(s);
+      });
+      var more=document.createElement('span'); more.className='pct';
+      more.innerHTML = '<span>Win <b>'+Math.round(p.rate*100)+'%</b></span><span>Pull <b>'+p.pull+'</b></span>';
+      st.appendChild(more);
+      row.appendChild(rk); row.appendChild(av); row.appendChild(whoEl); row.appendChild(st);
+      rb.appendChild(row);
     });
     document.getElementById('c-rank').textContent = players.length;
     var recent = res.filter(function(r){
@@ -111,7 +154,7 @@ td.rk{font-weight:900;white-space:nowrap;width:3em}td.w{font-weight:900;color:#f
       var tr = document.createElement('tr');
       tr.appendChild(td(B.fmtTime(r.t),'num'));
       var pc = document.createElement('td');
-      [['a','b'],['b','a']].forEach(function(s,i){ var d = document.createElement('div'); d.textContent = who(r[s[0]]) + '  ' + r[s[0]].p; if (r.w===s[0]) d.className='win'; pc.appendChild(d); });
+      [['a','b'],['b','a']].forEach(function(s){ var d = document.createElement('div'); d.textContent = who(r[s[0]]) + '  ' + r[s[0]].p; if (r.w===s[0]) d.className='win'; pc.appendChild(d); });
       tr.appendChild(pc);
       var how = r.h === 'forfeit' ? ' (forfeit)' : r.h === 'pull' ? ' (knockout)' : '';
       tr.appendChild(td(r.a.p + ' – ' + r.b.p,'num'));
@@ -120,6 +163,24 @@ td.rk{font-weight:900;white-space:nowrap;width:3em}td.w{font-weight:900;color:#f
     });
     document.getElementById('c-recent').textContent = recent.length;
     document.getElementById('counts').textContent = 'Duels: ' + res.length + ' · Players: ' + B.aggregate(res,'all').length;
+  }
+  async function loadPhotos(){
+    if (!officialNs) return;
+    try {
+      var raw = B.store.get('idu-board-photos-v1');
+      var c = raw ? JSON.parse(raw) : null;
+      if (c && c.at && (Date.now()-c.at) < 15*60*1000 && Array.isArray(c.photos) && c.photos.length) {
+        c.photos.forEach(remember); render();
+      }
+    } catch (e) {}
+    try {
+      var r = await fetch(ADM_API + '?action=duelBoardPhotos&t=' + Date.now(), { cache: 'no-store' });
+      var j = await r.json();
+      if (!j || !j.ok || !Array.isArray(j.photos)) return;
+      PHOTOS = {}; j.photos.forEach(remember);
+      try { B.store.set('idu-board-photos-v1', JSON.stringify({ at: Date.now(), photos: j.photos })); } catch (e) {}
+      render();
+    } catch (e) {}
   }
   async function load(){
     var r = await B.fetchResults(); all = r.results;
@@ -133,7 +194,7 @@ td.rk{font-weight:900;white-space:nowrap;width:3em}td.w{font-weight:900;color:#f
     render();
   });
   document.getElementById('period').onchange = render;
-  load(); setInterval(load, 15000);
+  load(); loadPhotos(); setInterval(load, 15000);
 })();
 </script>
 </body>
